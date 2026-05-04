@@ -114,7 +114,7 @@ export default class ServiceDeclarativeDebugClient
         packet.appendInt32BE(12); // Stream Version (Qt 4.7)
         packet.appendBoolean(true); // MultiPacket Support
 
-        await new Promise(async (resolve, reject) =>
+        await new Promise<void>((resolve, reject) =>
         {
             this.handshakeResolve = resolve;
             this.handshakeResolveTimeout = setTimeout(
@@ -125,7 +125,7 @@ export default class ServiceDeclarativeDebugClient
                 1000
             );
 
-            await this.session!.packetManager?.writePacket(packet);
+            this.session!.packetManager?.writePacket(packet).catch(reject);
         });
     }
 

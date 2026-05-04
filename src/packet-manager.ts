@@ -1,5 +1,5 @@
 import { TerminatedEvent } from "@vscode/debugadapter";
-import type { QmlDebugSession } from "@qml-debug/debug-adapter";
+import { QmlDebugSession } from "@qml-debug/debug-adapter";
 import Log from "@qml-debug/log";
 import Packet from "@qml-debug/packet";
 
@@ -11,24 +11,37 @@ import { TerminalColor } from "terminal-styler";
 
 type PacketHandlerCallback = (header : string, data : Packet) => boolean;
 
+/** Registered packet callback for a Qt debug service header. */
 export interface PacketHandler
 {
+    /** Service header name, or `*` to receive every packet. */
     name : string;
+    /** Callback that handles a packet and returns true when dispatch should stop. */
     callback : PacketHandlerCallback;
 }
 
+/** Owns the TCP transport and Qt debug packet framing/dispatch. */
 export default class PacketManager
 {
+    /** Debug session that receives termination events when the socket closes. */
     private session? : QmlDebugSession;
+    /** Raw Node socket used by promise-socket. */
     private nodeSocket : Socket | null = null;
+    /** Promise wrapper around the active Node socket. */
     private socket : PromiseSocket<Socket> | null = null;
+    /** Buffered bytes waiting for a complete Qt debug packet. */
     private receiveBuffer = Buffer.alloc(0);
+    /** Packet handlers registered by individual Qt debug service wrappers. */
     private packetHandlers : PacketHandler[] = [];
 
+    /** Target debug server host. */
     public host = "localhost";
+    /** Target debug server port. */
     public port = 10222;
+    /** Enables raw packet logging when true. */
     public logging = false;
 
+    /** Handle bytes received from the socket and pass them through the frame parser. */
     private onData(data : Buffer) : void
     {
         Log.trace("PacketManager.onData()", [ data ]);
@@ -48,6 +61,7 @@ export default class PacketManager
         this.receivePacket(data);
     }
 
+    /** Notify the DAP session when the Qt debug server closes the connection. */
     private onClose() : void
     {
         Log.trace("PacketManager.onClose", []);
@@ -57,6 +71,7 @@ export default class PacketManager
         Log.warning("Connection closed.");
     }
 
+    /** Log socket-level transport errors. */
     private onError(err : any) : void
     {
         Log.trace("PacketManager.onError", [ err ]);
@@ -64,6 +79,7 @@ export default class PacketManager
         Log.error("Socket Error - " + err);
     }
 
+    /** Open the TCP connection to the Qt QML debug server. */
     public async connect() : Promise<void>
     {
         Log.trace("connect", []);
@@ -79,6 +95,7 @@ export default class PacketManager
         Log.success("Connected.");
     }
 
+    /** Close the TCP connection and release socket state. */
     public async disconnect() : Promise<void>
     {
         Log.trace("PacketManager.disconnect", []);
@@ -99,6 +116,7 @@ export default class PacketManager
         Log.success("Disconnected.");
     }
 
+    /** Register a handler for a Qt debug service packet header. */
     public registerHandler(header : string, callback : PacketHandlerCallback) : void
     {
         Log.trace("PacketManager.registerHandler", [ header, callback ]);
@@ -106,6 +124,7 @@ export default class PacketManager
         this.packetHandlers.push({ name: header, callback: callback });
     }
 
+    /** Dispatch a decoded packet to the first matching service handler. */
     private dispatchPacket(packet : Packet)
     {
         Log.trace("PacketManager.dispatchPacket", [ packet ]);
@@ -125,6 +144,7 @@ export default class PacketManager
         }
     }
 
+    /** Append received bytes, decode all complete length-prefixed packets, and buffer the remainder. */
     public receivePacket(buffer : Buffer) : void
     {
         Log.trace("PacketManager.receivePacket", [ buffer ]);
@@ -159,6 +179,7 @@ export default class PacketManager
         }
     }
 
+    /** Write one packet using Qt's little-endian length-prefixed outer frame. */
     public async writePacket(packet : Packet) : Promise<void>
     {
         Log.trace("PacketManager.writePacket", [ packet ]);
@@ -195,6 +216,7 @@ export default class PacketManager
         }
     }
 
+    /** Return a promise that resolves when the socket closes and rejects on socket error. */
     public async process() : Promise<void>
     {
         Log.trace("PacketManager.process", []);
@@ -224,6 +246,7 @@ export default class PacketManager
         );
     }
 
+    /** Create a packet manager bound to one QML debug session. */
     public constructor(session : QmlDebugSession)
     {
         Log.trace("PacketManager.constructor", [ session ]);

@@ -5,26 +5,94 @@ import ServiceNativeDebugger from "@qml-debug/service-v8-debugger";
 import ServiceDeclarativeDebugClient from "@qml-debug/service-declarative-debug-client";
 import PacketManager from "@qml-debug/packet-manager";
 import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/qml-messages";
+import { QmlFrame, QmlVariable } from "@qml-debug/qml-types";
 
 import path = require("path");
 import * as vscode from "vscode";
 import { InitializedEvent, LoggingDebugSession, Response, StoppedEvent, TerminatedEvent, Thread, StackFrame, Source, Scope, Variable, InvalidatedEvent } from "@vscode/debugadapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 
+/** A breakpoint tracked by VS Code and, once attached, synchronized to the QML V8 debug service. */
 interface QmlBreakpoint
 {
+    /** Debugger-service breakpoint id. A value of 0 means the breakpoint is still pending remote synchronization. */
     id : number;
+    /** Physical source path used by VS Code. */
     filename : string;
+    /** Client-facing DAP line number. */
     line : number;
 }
 
+/** Attach configuration accepted by the QML debug adapter. */
 interface QmlDebugSessionAttachArguments extends DebugProtocol.AttachRequestArguments
 {
+    /** Hostname or IP address where the Qt QML debug server listens. */
     host : string;
+    /** TCP port where the Qt QML debug server listens. */
     port : number;
+    /** Mapping from virtual QML paths such as qrc:/qml to local filesystem folders. */
     paths : { [key: string] : string };
 }
 
+/** Common lifecycle methods implemented by every Qt debug service wrapper. */
+interface DebugLifecycleService
+{
+    /** Prepare service state before a debug connection is opened. */
+    initialize() : Promise<void>;
+    /** Release service state before the debug connection is closed. */
+    deinitialize() : Promise<void>;
+}
+
+/** QDeclarativeDebugClient bridge used for service negotiation. */
+interface DeclarativeDebugClientService extends DebugLifecycleService
+{
+    /** Perform the Qt debug server handshake and service negotiation. */
+    handshake() : Promise<void>;
+}
+
+/** Minimal V8 debugger service surface used by the DAP adapter. */
+interface V8DebuggerService extends DebugLifecycleService
+{
+    /** Complete V8 debugger service negotiation after the transport is connected. */
+    handshake() : Promise<void>;
+    /** Disconnect the V8 debugger service. */
+    disconnect() : Promise<void>;
+    /** Install a source breakpoint in the QML/JS runtime. */
+    requestSetBreakpoint(filenameParam : string, lineParam : number) : Promise<any>;
+    /** Remove a source breakpoint from the QML/JS runtime. */
+    requestClearBreakpoint(idParam : number) : Promise<any>;
+    /** Configure exception break mode. */
+    requestSetExceptionBreakpoint(typeParam : string, enabledParam : boolean) : Promise<any>;
+    /** Request the current QML/JS stack trace. */
+    requestBacktrace() : Promise<any>;
+    /** Request a stack frame and its scope references. */
+    requestFrame(frameId : number) : Promise<any>;
+    /** Request a concrete scope object. */
+    requestScope(scopeId : number) : Promise<any>;
+    /** Request object details for one or more QML handles. */
+    requestLookup(handlesParam : number[]) : Promise<any>;
+    /** Evaluate an expression in a stack frame. */
+    requestEvaluate(frameId : number, expressionParam : string) : Promise<any>;
+    /** Continue execution, optionally with a step action. */
+    requestContinue(stepAction? : "in" | "out" | "next", stepCount? : 1) : Promise<any>;
+}
+
+/** Optional constructor dependencies used by unit tests to replace Qt services with mocks. */
+interface QmlDebugSessionDependencies
+{
+    /** Packet transport between the adapter and the Qt debug server. */
+    packetManager? : PacketManager;
+    /** QmlDebugger service wrapper. */
+    qmlDebugger? : DebugLifecycleService;
+    /** DebugMessages service wrapper. */
+    debugMessages? : DebugLifecycleService;
+    /** V8Debugger service wrapper. */
+    v8debugger? : V8DebuggerService;
+    /** QDeclarativeDebugClient service wrapper. */
+    declarativeDebugClient? : DeclarativeDebugClientService;
+}
+
+/** Convert a Qt/V8 scope type id into a human-readable DAP scope name. */
 function convertScopeName(type : number) : string
 {
     switch (type)
@@ -45,6 +113,7 @@ function convertScopeName(type : number) : string
     }
 }
 
+/** Convert a Qt/V8 scope type id into a DAP presentation hint. */
 function convertScopeType(type : number) : string
 {
     switch (type)
@@ -62,21 +131,69 @@ function convertScopeType(type : number) : string
     }
 }
 
+/** Return true when a path uses a Qt virtual scheme that must not be normalized as a host filesystem path. */
+function isVirtualQmlPath(filename : string) : boolean
+{
+    return /^qrc:\//i.test(filename) || /^file:\//i.test(filename);
+}
+
+/** Normalize a QML virtual path to stable slash separators and no trailing slash. */
+function normalizeVirtualPath(filename : string) : string
+{
+    let normalized = filename.replace(/\\/g, "/");
+    while (normalized.length > "qrc:/".length && normalized.endsWith("/"))
+        normalized = normalized.slice(0, -1);
+
+    return normalized;
+}
+
+/** Normalize a local filesystem path for prefix comparisons. */
+function normalizePhysicalPath(filename : string) : string
+{
+    return path.normalize(filename).replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/** Normalize either a QML virtual path or a local filesystem path. */
+function normalizeSourcePath(filename : string) : string
+{
+    return isVirtualQmlPath(filename) ? normalizeVirtualPath(filename) : normalizePhysicalPath(filename);
+}
+
+/** Return true when candidate equals base or is a child path of base. */
+function startsWithPath(candidate : string, base : string) : boolean
+{
+    return candidate === base || candidate.startsWith(base + "/");
+}
+
 export class QmlDebugSession extends LoggingDebugSession
 {
-    private packetManager_ = new PacketManager(this);
-    private qmlDebugger = new ServiceQmlDebugger(this);
-    private debugMessages = new ServiceDebugMessages(this);
-    private v8debugger = new ServiceNativeDebugger(this);
-    private declarativeDebugClient = new ServiceDeclarativeDebugClient(this);
+    /** Packet transport used by all Qt debug services. */
+    private packetManager_ : PacketManager;
+    /** QmlDebugger service wrapper. */
+    private qmlDebugger : DebugLifecycleService;
+    /** DebugMessages service wrapper. */
+    private debugMessages : DebugLifecycleService;
+    /** V8Debugger service wrapper that powers QML/JS debugging. */
+    private v8debugger : V8DebuggerService;
+    /** Declarative debug client used for the initial Qt handshake. */
+    private declarativeDebugClient : DeclarativeDebugClientService;
 
+    /** Whether the runtime is currently paused in QML/JS code. */
     private breaked = false;
+    /** Breakpoints requested by VS Code and synchronized to the Qt debug service when connected. */
     private breakpoints : QmlBreakpoint[] = [];
+    /** Virtual-to-physical source path mappings from launch configuration. */
     private pathMappings = new Map<string, string>([]);
+    /** True when the client sends 0-based lines. */
     private linesStartFromZero = false;
+    /** True when the client sends 0-based columns. */
     protected columnsStartFromZero = false;
+    /** Whether function-valued object properties should be hidden in variable views. */
     private filterFunctions = true;
+    /** Whether object members should be sorted by name before returning variables. */
     private sortMembers = true;
+    /** True after the Qt debug service handshake has completed. */
+    private debuggerConnected = false;
 
     public get packetManager() : PacketManager
     {
@@ -88,71 +205,93 @@ export class QmlDebugSession extends LoggingDebugSession
         return 1;
     }
 
+    /** Replace the active virtual-to-physical path mapping table. */
+    public setPathMappings(paths : { [key: string] : string } | undefined) : void
+    {
+        const mappings = Object.entries(paths ?? {})
+            .filter((entry) : boolean => { return entry[1] !== null && entry[1] !== undefined; })
+            .map<[string, string]>((entry) : [string, string] =>
+            {
+                return [ normalizeVirtualPath(entry[0]), normalizePhysicalPath(entry[1]) ];
+            })
+            .sort((a, b) : number => { return b[0].length - a[0].length; });
+
+        this.pathMappings = new Map(mappings);
+    }
+
+    /** Convert a local VS Code source path into the virtual path understood by the Qt debug service. */
     public mapPathTo(filename : string) : string
     {
-        const parsed = path.parse(path.normalize(filename));
+        const normalized = normalizeSourcePath(filename);
+        if (isVirtualQmlPath(normalized))
+            return normalized;
 
-        // JUST WOW - It does not want full path only wants file name...
-        /*for (const [ virtualPath, physicalPath ] of this.pathMappings)
-        {
-            if (parsed.dir.startsWith(physicalPath))
-            {
-                const relativePath = parsed.dir.slice(physicalPath.length, parsed.dir.length);
-                return virtualPath + relativePath + "/" + parsed.base;
-            }
-        }
-
-        return filename;*/
-
-        return parsed.base;
-    }
-
-    public mapPathFrom(filename : string) : string
-    {
-        const parsed = path.parse(path.normalize(filename));
         for (const [ virtualPath, physicalPath ] of this.pathMappings)
         {
-            if (parsed.dir.startsWith(virtualPath))
+            if (startsWithPath(normalized, physicalPath))
             {
-                const relativePath = parsed.dir.slice(virtualPath.length, parsed.dir.length);
-                return physicalPath + relativePath + "/" + parsed.base;
+                const relativePath = normalized.slice(physicalPath.length).replace(/^\//, "");
+                return relativePath === "" ? virtualPath : virtualPath + "/" + relativePath;
             }
         }
 
-        return filename;
+        return path.parse(normalized).base;
     }
 
+    /** Convert a Qt virtual source path into a local VS Code filesystem path where mapping exists. */
+    public mapPathFrom(filename : string) : string
+    {
+        const normalized = normalizeSourcePath(filename);
+        for (const [ virtualPath, physicalPath ] of this.pathMappings)
+        {
+            if (startsWithPath(normalized, virtualPath))
+            {
+                const relativePath = normalized.slice(virtualPath.length).replace(/^\//, "");
+                return relativePath === "" ? physicalPath : path.join(physicalPath, relativePath);
+            }
+        }
+
+        return normalized;
+    }
+
+    /** Convert a DAP line number into the line numbering expected by Qt/V8. */
     public mapLineNumberTo(lineNumber : number) : number
     {
         return (this.linesStartFromZero ? lineNumber : lineNumber - 1);
     }
 
+    /** Convert a Qt/V8 line number into the line numbering expected by the DAP client. */
     public mapLineNumberFrom(lineNumber : number) : number
     {
         return (this.linesStartFromZero ? lineNumber : lineNumber + 1);
     }
 
+    /** Convert a DAP column number into the column numbering expected by Qt/V8. */
     public mapColumnTo(column : number) : number
     {
         return (this.columnsStartFromZero ? column : column - 1);
     }
 
+    /** Convert a Qt/V8 column number into the column numbering expected by the DAP client. */
     public mapColumnFrom(column : number) : number
     {
         return (this.columnsStartFromZero ? column : column + 1);
     }
 
+    /** Convert a DAP variablesReference into the raw Qt/V8 object handle. */
     public mapHandleTo(handle : number) : number
     {
         return handle - 1;
     }
 
+    /** Convert a raw Qt/V8 object handle into a DAP variablesReference. */
     public mapHandleFrom(handle : number) : number
     {
         return handle + 1;
     }
 
-    private raiseError(response : Response, errorNo : number, errorText : string) : void
+    /** Send a DAP error response and optionally terminate the debug session. */
+    private sendQmlError(response : Response, errorNo : number, errorText : string, terminate : boolean) : void
     {
         this.sendErrorResponse(response,
             {
@@ -162,9 +301,39 @@ export class QmlDebugSession extends LoggingDebugSession
             }
         );
 
-        this.sendEvent(new TerminatedEvent());
+        if (terminate)
+            this.sendEvent(new TerminatedEvent());
     }
 
+    /** Send a fatal DAP error and terminate the session. */
+    private raiseError(response : Response, errorNo : number, errorText : string) : void
+    {
+        this.sendQmlError(response, errorNo, errorText, true);
+    }
+
+    /** Send a recoverable DAP request error without terminating the session. */
+    private failRequest(response : Response, errorNo : number, errorText : string) : void
+    {
+        this.sendQmlError(response, errorNo, errorText, false);
+    }
+
+    /** Push locally known breakpoints that do not yet have a Qt debugger id to the active debug service. */
+    private async synchronizeBreakpoints() : Promise<void>
+    {
+        for (const current of this.breakpoints)
+        {
+            if (current.id !== 0)
+                continue;
+
+            const result = await this.v8debugger.requestSetBreakpoint(this.mapPathTo(current.filename), this.mapLineNumberTo(current.line));
+            if (!result.success)
+                throw new Error("Cannot synchronize breakpoint " + current.filename + ":" + current.line + ".");
+
+            current.id = result.body.breakpoint;
+        }
+    }
+
+    /** Handle asynchronous Qt/V8 runtime events and translate them into DAP events. */
     public onEvent(event : QmlEvent<any>) : void
     {
         if (event.event === "break")
@@ -179,7 +348,7 @@ export class QmlDebugSession extends LoggingDebugSession
             {
                 const current = this.breakpoints[i];
                 if (current.filename === filename && current.line === this.mapLineNumberFrom(breakEvent.sourceLine))
-                    breakpointIds.push(i);
+                    breakpointIds.push(current.id);
             }
 
             this.breaked = true;
@@ -301,13 +470,15 @@ export class QmlDebugSession extends LoggingDebugSession
         this.packetManager.host = args.host;
         this.packetManager.port = args.port;
         if (args.paths !== undefined)
-            this.pathMappings = new Map(Object.entries(args.paths));
+            this.setPathMappings(args.paths);
 
         try
         {
             await this.packetManager.connect();
             await this.declarativeDebugClient.handshake();
             await this.v8debugger.handshake();
+            this.debuggerConnected = true;
+            await this.synchronizeBreakpoints();
             this.sendResponse(response);
         }
         catch (error)
@@ -329,12 +500,13 @@ export class QmlDebugSession extends LoggingDebugSession
             await this.qmlDebugger.deinitialize();
             await this.declarativeDebugClient.deinitialize();
             await this.packetManager.disconnect();
+            this.debuggerConnected = false;
 
             this.sendResponse(response);
         }
         catch (error)
         {
-            this.raiseError(response, 1004, "Cannot disconnect from Qml debugger. \n\tHost: " + this.packetManager.host + "\n\tPort:" + this.packetManager.port + ", " + error);
+            this.failRequest(response, 1004, "Cannot disconnect from Qml debugger. \n\tHost: " + this.packetManager.host + "\n\tPort:" + this.packetManager.port + ", " + error);
             return;
         }
     }
@@ -378,6 +550,9 @@ export class QmlDebugSession extends LoggingDebugSession
                 this.breakpoints.splice(i, 1);
                 i--;
 
+                if (!this.debuggerConnected || currentExisting.id === 0)
+                    continue;
+
                 try
                 {
                     const result = await this.v8debugger.requestClearBreakpoint(currentExisting.id);
@@ -390,7 +565,7 @@ export class QmlDebugSession extends LoggingDebugSession
                 }
                 catch (error)
                 {
-                    this.raiseError(response, 1005, "Request failed. Request: \"removebreakpoint\". " + error);
+                    this.failRequest(response, 1005, "Request failed. Request: \"removebreakpoint\". " + error);
                     return;
                 }
             }
@@ -418,22 +593,25 @@ export class QmlDebugSession extends LoggingDebugSession
 
             let breakpointId = 0;
 
-            try
+            if (this.debuggerConnected)
             {
-                const result = await this.v8debugger.requestSetBreakpoint(this.mapPathTo(sourcePath), this.mapLineNumberTo(current.line));
-                if (!result.success)
+                try
                 {
-                    response.success = false;
-                    this.sendResponse(response);
+                    const result = await this.v8debugger.requestSetBreakpoint(this.mapPathTo(sourcePath), this.mapLineNumberTo(current.line));
+                    if (!result.success)
+                    {
+                        response.success = false;
+                        this.sendResponse(response);
+                        return;
+                    }
+
+                    breakpointId = result.body.breakpoint;
+                }
+                catch (error)
+                {
+                    this.failRequest(response, 1005, "Request failed. Request: \"setbreakpoint\". " + error);
                     return;
                 }
-
-                breakpointId = result.body.breakpoint;
-            }
-            catch (error)
-            {
-                this.raiseError(response, 1005, "Request failed. Request: \"setbreakpoint\". " + error);
-                return;
             }
 
             const newBreakpoint : QmlBreakpoint =
@@ -456,7 +634,8 @@ export class QmlDebugSession extends LoggingDebugSession
                         {
                             id: value.id,
                             line: value.line,
-                            verified: true
+                            verified: value.id !== 0,
+                            message: value.id === 0 ? "Pending QML debugger attach." : undefined
                         };
                         return breakpoint;
                     }
@@ -480,7 +659,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"setexceptionbreak\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"setexceptionbreak\". " + error);
         }
 
         // NOT SUPPORTED YET
@@ -515,10 +694,11 @@ export class QmlDebugSession extends LoggingDebugSession
             }
 
             const backtrace = result.body;
+            const frames = backtrace.frames as QmlFrame[];
             let frameCount = 0;
             response.body =
             {
-                stackFrames: backtrace.frames
+                stackFrames: frames
                     .filter(
                         (value, index, array) =>
                         {
@@ -548,13 +728,13 @@ export class QmlDebugSession extends LoggingDebugSession
                         }
                     )
             };
-            response.body.totalFrames = result.body.frames.length;
+            response.body.totalFrames = frames.length;
 
             this.sendResponse(response);
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"backtrace\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"backtrace\". " + error);
         }
     }
 
@@ -609,7 +789,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"scope\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"scope\". " + error);
         }
     }
 
@@ -627,7 +807,7 @@ export class QmlDebugSession extends LoggingDebugSession
                 return;
             }
 
-            const variables = Object.values(result.body);
+            const variables = Object.values(result.body) as QmlVariable[];
 
             response.body =
             {
@@ -641,7 +821,9 @@ export class QmlDebugSession extends LoggingDebugSession
             }
 
             let variableCount = 0;
-            response.body.variables = variables[0].properties!
+            const properties = variables[0].properties ?? [];
+
+            response.body.variables = properties
                 .filter(
                     (value, index, array) : boolean =>
                     {
@@ -734,7 +916,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"variables\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"variables\". " + error);
         }
     }
 
@@ -793,7 +975,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"evaluate\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"evaluate\". " + error);
         }
     }
 
@@ -817,7 +999,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"stepin\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"stepin\". " + error);
         }
     }
 
@@ -841,7 +1023,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"stepout\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"stepout\". " + error);
         }
     }
 
@@ -865,7 +1047,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"next\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"next\". " + error);
         }
     }
 
@@ -889,13 +1071,20 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
-            this.raiseError(response, 1005, "Request failed. Request: \"continue\". " + error);
+            this.failRequest(response, 1005, "Request failed. Request: \"continue\". " + error);
         }
     }
 
-    public constructor(session : vscode.DebugSession)
+    /** Create a DAP session, optionally using mocked Qt services for unit tests. */
+    public constructor(session : vscode.DebugSession, dependencies : QmlDebugSessionDependencies = {})
     {
         super();
+
+        this.packetManager_ = dependencies.packetManager ?? new PacketManager(this);
+        this.qmlDebugger = dependencies.qmlDebugger ?? new ServiceQmlDebugger(this);
+        this.debugMessages = dependencies.debugMessages ?? new ServiceDebugMessages(this);
+        this.v8debugger = dependencies.v8debugger ?? new ServiceNativeDebugger(this);
+        this.declarativeDebugClient = dependencies.declarativeDebugClient ?? new ServiceDeclarativeDebugClient(this);
 
         this.filterFunctions = vscode.workspace.getConfiguration("qml-debug").get<boolean>("filterFunctions", true);
         this.sortMembers = vscode.workspace.getConfiguration("qml-debug").get<boolean>("sortMembers", true);
@@ -916,8 +1105,10 @@ export class QmlDebugSession extends LoggingDebugSession
     }
 }
 
+/** VS Code factory that creates an inline QML debug adapter session. */
 export class QmlDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory
 {
+    /** Create the debug adapter descriptor consumed by VS Code's debug service. */
     public createDebugAdapterDescriptor(session: vscode.DebugSession, executable: vscode.DebugAdapterExecutable | undefined): vscode.ProviderResult<vscode.DebugAdapterDescriptor>
     {
         Log.trace("QmlDebugAdapterFactory.createDebugAdapterDescriptor", [ session, executable ]);

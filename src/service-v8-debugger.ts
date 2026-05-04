@@ -148,7 +148,7 @@ export default class ServiceV8Debugger
             autoReject = true;
 
         return new Promise<any>(
-            async (resolveParam, rejectParam) =>
+            (resolveParam, rejectParam) =>
             {
                 const packet = new Packet();
                 packet.appendStringUTF8("V8DEBUG");
@@ -192,7 +192,11 @@ export default class ServiceV8Debugger
                     }
                 );
 
-                await this.session!.packetManager!.writePacket(envelopPacket);
+                this.session!.packetManager!.writePacket(envelopPacket).catch((error) =>
+                {
+                    this.finishOrCancelRequest(seq);
+                    rejectParam(error);
+                });
             }
         );
     }
@@ -384,7 +388,7 @@ export default class ServiceV8Debugger
         Log.trace("ServiceV8Debugger.connect", []);
 
         return new Promise<any>(
-            async (resolveParam, rejectParam) =>
+            (resolveParam, rejectParam) =>
             {
                 const packet = new Packet();
                 packet.appendStringUTF8("V8DEBUG");
@@ -413,7 +417,11 @@ export default class ServiceV8Debugger
                     autoReject: true
                 };
 
-                await this.session!.packetManager!.writePacket(envelopePacket);
+                this.session!.packetManager!.writePacket(envelopePacket).catch((error) =>
+                {
+                    clearTimeout(tId);
+                    rejectParam(error);
+                });
             }
         );
     }

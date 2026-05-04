@@ -1,9 +1,14 @@
+/** Mutable Qt datastream packet buffer with sequential read and append helpers. */
 export default class Packet
 {
+    /** Number of bytes currently used in the packet buffer. */
     private size  = 0;
+    /** Backing storage for packet bytes. May be larger than `size`. */
     private data = Buffer.alloc(0);
+    /** Current sequential read cursor. */
     private readOffset  = 0;
 
+    /** Replace packet contents from an existing buffer slice. */
     public setData(data : Buffer, size? : number, offset? : number) : void
     {
         if (size !== undefined && offset !== undefined)
@@ -25,16 +30,19 @@ export default class Packet
         this.readOffset = 0;
     }
 
+    /** Return a copy of the used packet bytes. */
     public getData() : Buffer
     {
         return this.data.slice(0, this.size);
     }
 
+    /** Return the number of used bytes in the packet. */
     public getSize() : number
     {
         return this.size;
     }
 
+    /** Resize the used byte range and grow backing storage when needed. */
     private resize(size : number)
     {
         this.size = size;
@@ -50,11 +58,13 @@ export default class Packet
         }
     }
 
+    /** Increase the packet size by the requested number of bytes. */
     private expand(size : number)
     {
         this.resize(this.size + size);
     }
 
+    /** Move the read cursor, clamped to packet bounds. */
     public readSeek(offset : number) : void
     {
         if (offset > this.size)
@@ -65,11 +75,13 @@ export default class Packet
             this.readOffset = Math.floor(offset);
     }
 
+    /** Return true when the read cursor reached the end of the packet. */
     public readEOF() : boolean
     {
         return this.readOffset >= this.size;
     }
 
+    /** Return the current read cursor offset. */
     public readTell() : number
     {
         return this.readOffset;
@@ -194,6 +206,7 @@ export default class Packet
         return (value === 0 ? false : true);
     }
 
+    /** Read a Qt UTF-8 string encoded as a big-endian byte length followed by bytes. */
     public readStringUTF8() : string
     {
         const len = this.data.readUInt32BE(this.readOffset);
@@ -208,6 +221,7 @@ export default class Packet
         return value;
     }
 
+    /** Read a Qt UTF-16 string encoded as a big-endian byte length followed by big-endian UTF-16 bytes. */
     public readStringUTF16() : string
     {
         const len = this.data.readUInt32BE(this.readOffset);
@@ -223,6 +237,7 @@ export default class Packet
         return valueString;
     }
 
+    /** Read a Qt array by repeatedly invoking a packet reader function. */
     public readArray<ValueType>(readerFn : () => ValueType) : ValueType[]
     {
         const value : ValueType[] = [];
@@ -236,18 +251,21 @@ export default class Packet
         return value;
     }
 
+    /** Read a UTF-8 JSON payload. */
     public readJsonUTF8() : any
     {
         const jsonString = this.readStringUTF8();
         return JSON.parse(jsonString);
     }
 
+    /** Read a UTF-16 JSON payload. */
     public readJsonUTF16() : any
     {
         const jsonString = this.readStringUTF16();
         return JSON.parse(jsonString);
     }
 
+    /** Read a nested packet prefixed by a big-endian payload size. */
     public readSubPacket() : Packet
     {
         const size = this.readUInt32BE();
@@ -354,11 +372,13 @@ export default class Packet
         this.data.writeBigInt64BE(value, offset);
     }
 
+    /** Append a Qt boolean encoded as one byte. */
     public appendBoolean(value : boolean) : void
     {
         this.appendUInt8(value ? 1 : 0);
     }
 
+    /** Append a 32-bit big-endian floating-point value. */
     public appendFloat(value : number) : void
     {
         const offset = this.size;
@@ -366,6 +386,7 @@ export default class Packet
         this.data.writeFloatBE(value, offset);
     }
 
+    /** Append a 64-bit big-endian floating-point value. */
     public appendDouble(value : number) : void
     {
         const offset = this.size;
@@ -373,6 +394,7 @@ export default class Packet
         this.data.writeDoubleBE(value, offset);
     }
 
+    /** Append a Qt UTF-8 string with a big-endian byte length prefix. */
     public appendStringUTF8(value : string) : void
     {
         if (value === "")
@@ -388,6 +410,7 @@ export default class Packet
         }
     }
 
+    /** Append a Qt UTF-16 string with a big-endian byte length prefix. */
     public appendStringUTF16(value : string) : void
     {
         if (value === "")
@@ -404,6 +427,7 @@ export default class Packet
         }
     }
 
+    /** Append a Qt array by invoking an append function for each element. */
     public appendArray<ValueType>(appendFunction : (value : ValueType) => void, value : ValueType[]) : void
     {
         this.appendUInt32BE(value.length);
@@ -411,6 +435,7 @@ export default class Packet
             appendFunction.call(this, value[i]);
     }
 
+    /** Append a value as UTF-8 JSON. */
     public appendJsonUTF8(value : any) : void
     {
         if (value === undefined || value === null || Object.keys(value).length === 0)
@@ -424,6 +449,7 @@ export default class Packet
         }
     }
 
+    /** Append a value as UTF-16 JSON. */
     public appendJsonUTF16(value : any) : void
     {
         if (value === undefined || value === null || Object.keys(value).length === 0)
@@ -437,6 +463,7 @@ export default class Packet
         }
     }
 
+    /** Append a nested packet prefixed by a big-endian payload size. */
     public appendSubPacket(packet : Packet) : void
     {
         this.appendUInt32BE(packet.getSize());
@@ -445,6 +472,7 @@ export default class Packet
         packet.getData().copy(this.data, offset);
     }
 
+    /** Append another packet's raw bytes without adding a nested-packet size prefix. */
     public combine(packet : Packet) : void
     {
         const offset = this.size;
@@ -452,6 +480,7 @@ export default class Packet
         packet.getData().copy(this.data, offset);
     }
 
+    /** Create an empty packet or initialize it from an existing buffer slice. */
     public constructor(data? : Buffer, size? : number, offset? : number)
     {
         if (data !== undefined)

@@ -7,12 +7,12 @@
 - Fix packet primitive bugs, packet framing bugs, and DAP requests that currently do not respond.
 - Make initialize capabilities truthful and add `configurationDone` support.
 
-## Phase 2: DAP Adapter Hardening
+## Phase 2: DAP Adapter Hardening - Completed
 
-- Refactor `QmlDebugSession` so breakpoints can be accepted during DAP configuration and synchronized after attach.
-- Add tests for breakpoints, stack traces, scopes, variables, evaluate, stepping, and disconnect paths with mocked services.
-- Normalize source path mapping for `qrc:/` and filesystem paths.
-- Improve error responses and termination behavior for failed handshakes and missing services.
+- [x] Refactor `QmlDebugSession` so breakpoints can be accepted during DAP configuration and synchronized after attach.
+- [x] Add tests for breakpoints, stack traces, scopes, variables, evaluate, stepping, and disconnect paths with mocked services.
+- [x] Normalize source path mapping for `qrc:/` and filesystem paths.
+- [x] Improve error responses and termination behavior for failed handshakes and missing services.
 
 ## Phase 3: Qt Creator Parity
 
