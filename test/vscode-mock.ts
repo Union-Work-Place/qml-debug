@@ -4,6 +4,7 @@ class Disposable
     /** Release the mocked subscription. */
     public dispose() : void
     {
+        return undefined;
     }
 }
 
@@ -11,7 +12,7 @@ class Disposable
 export const workspace =
 {
     /** Return configuration values used by the adapter constructor. */
-    getConfiguration: () =>
+    getConfiguration: () : { get<ValueType>(key : string, defaultValue : ValueType) : ValueType; update() : Promise<void> } =>
     {
         return {
             get: <ValueType>(key : string, defaultValue : ValueType) : ValueType => defaultValue,

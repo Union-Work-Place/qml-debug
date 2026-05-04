@@ -98,6 +98,9 @@ describe("PacketManager", () =>
         const invalidFrame = Buffer.alloc(4);
         invalidFrame.writeUInt32LE(3, 0);
 
-        assert.throws(() => manager.receivePacket(invalidFrame), /Invalid packet size/);
+        assert.throws(() =>
+        {
+            manager.receivePacket(invalidFrame);
+        }, /Invalid packet size/);
     });
 });

@@ -1,0 +1,15 @@
+{
+    "type": "qml",
+    "request": "launch",
+    "name": "Fixture QML Launch",
+    "program": "${workspaceFolder}/test/fixtures/fake-qml-app",
+    "args": [
+        "--fixture"
+    ],
+    "host": "127.0.0.1",
+    "port": 23456,
+    "paths": {
+        "qrc:/qml": "${workspaceFolder}/test/fixtures/qml"
+    },
+    "block": true
+}

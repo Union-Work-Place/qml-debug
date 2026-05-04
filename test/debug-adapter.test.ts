@@ -2,6 +2,7 @@ import assert = require("assert");
 import PacketManager from "@qml-debug/packet-manager";
 import { QmlDebugSession } from "@qml-debug/debug-adapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
+import { EventEmitter } from "events";
 
 /** Successful QML/V8 service response used by DAP tests. */
 function qmlResponse(command : string, body : any = undefined) : any
@@ -98,13 +99,15 @@ class MockV8Debugger extends MockLifecycleService
     /** Number of V8 disconnects. */
     public disconnectCount = 0;
     /** Breakpoint set requests. */
-    public setBreakpointCalls : Array<{ filename : string; line : number }> = [];
+    public setBreakpointCalls : { filename : string; line : number }[] = [];
     /** Breakpoint clear requests. */
     public clearBreakpointCalls : number[] = [];
     /** Continue or step requests. */
-    public continueCalls : Array<{ stepAction? : "in" | "out" | "next"; stepCount? : 1 }> = [];
+    public continueCalls : { stepAction? : "in" | "out" | "next"; stepCount? : 1 }[] = [];
     /** Last exception breakpoint request. */
     public exceptionRequest? : { type : string; enabled : boolean };
+    /** All exception breakpoint requests. */
+    public exceptionRequests : { type : string; enabled : boolean }[] = [];
     /** Stack trace response returned by requestBacktrace. */
     public backtraceResponse = qmlResponse("backtrace", { fromFrame: 0, toFrame: 0, frames: [] });
     /** Frame response returned by requestFrame. */
@@ -146,6 +149,7 @@ class MockV8Debugger extends MockLifecycleService
     public async requestSetExceptionBreakpoint(type : string, enabled : boolean) : Promise<any>
     {
         this.exceptionRequest = { type: type, enabled: enabled };
+        this.exceptionRequests.push(this.exceptionRequest);
         return qmlResponse("setexceptionbreak", { type: type, enabled: enabled });
     }
 
@@ -184,6 +188,26 @@ class MockV8Debugger extends MockLifecycleService
     {
         this.continueCalls.push({ stepAction: stepAction, stepCount: stepCount });
         return qmlResponse("continue");
+    }
+
+    /** Record a pause request. */
+    public async requestPause() : Promise<any>
+    {
+        return qmlResponse("suspend");
+    }
+}
+
+/** Minimal child process stub returned by launch-mode tests. */
+class MockChildProcess extends EventEmitter
+{
+    /** Whether kill has been called. */
+    public killed = false;
+
+    /** Mark the process as killed. */
+    public kill() : boolean
+    {
+        this.killed = true;
+        return true;
     }
 }
 
@@ -231,6 +255,14 @@ class TestQmlDebugSession extends QmlDebugSession
         return response;
     }
 
+    /** Invoke launchRequest for tests. */
+    public async callLaunch(args : any) : Promise<DebugProtocol.LaunchResponse>
+    {
+        const response = dapResponse("launch") as DebugProtocol.LaunchResponse;
+        await this.launchRequest(response, args);
+        return response;
+    }
+
     /** Invoke disconnectRequest for tests. */
     public async callDisconnect() : Promise<DebugProtocol.DisconnectResponse>
     {
@@ -252,6 +284,14 @@ class TestQmlDebugSession extends QmlDebugSession
     {
         const response = dapResponse("setExceptionBreakpoints") as DebugProtocol.SetExceptionBreakpointsResponse;
         await this.setExceptionBreakPointsRequest(response, { filters: filters });
+        return response;
+    }
+
+    /** Invoke pauseRequest for tests. */
+    public async callPause() : Promise<DebugProtocol.PauseResponse>
+    {
+        const response = dapResponse("pause") as DebugProtocol.PauseResponse;
+        await this.pauseRequest(response, { threadId: this.mainQmlThreadId });
         return response;
     }
 
@@ -305,22 +345,29 @@ class TestQmlDebugSession extends QmlDebugSession
 }
 
 /** Create a QML debug session with mocked service dependencies. */
-function createSession() : { session : TestQmlDebugSession; packetManager : MockPacketManager; v8 : MockV8Debugger; declarative : MockDeclarativeDebugClient }
+function createSession() : { session : TestQmlDebugSession; packetManager : MockPacketManager; v8 : MockV8Debugger; declarative : MockDeclarativeDebugClient; launched : any[]; child : MockChildProcess }
 {
     const packetManager = new MockPacketManager();
     const v8 = new MockV8Debugger();
     const declarative = new MockDeclarativeDebugClient();
+    const launched : any[] = [];
+    const child = new MockChildProcess();
     const session = new TestQmlDebugSession({} as any,
         {
             packetManager: packetManager,
             qmlDebugger: new MockLifecycleService(),
             debugMessages: new MockLifecycleService(),
             v8debugger: v8,
-            declarativeDebugClient: declarative
+            declarativeDebugClient: declarative,
+            processLauncher: (options : any) : any =>
+            {
+                launched.push(options);
+                return child;
+            }
         } as any
     );
 
-    return { session: session, packetManager: packetManager, v8: v8, declarative: declarative };
+    return { session: session, packetManager: packetManager, v8: v8, declarative: declarative, launched: launched, child: child };
 }
 
 describe("QmlDebugSession", () =>
@@ -333,7 +380,9 @@ describe("QmlDebugSession", () =>
 
         assert.strictEqual(response.body!.supportsConfigurationDoneRequest, true);
         assert.strictEqual(response.body!.supportsFunctionBreakpoints, false);
+        assert.strictEqual(response.body!.supportsEvaluateForHovers, true);
         assert.strictEqual(response.body!.exceptionBreakpointFilters![0].filter, "all");
+        assert.strictEqual(response.body!.exceptionBreakpointFilters![1].filter, "uncaught");
     });
 
     it("normalizes physical and qrc source path mappings", () =>
@@ -375,6 +424,34 @@ describe("QmlDebugSession", () =>
         assert.deepStrictEqual(v8.clearBreakpointCalls, [ 10 ]);
     });
 
+    it("launches a QML process with generated debugger arguments and attaches", async () =>
+    {
+        const { session, packetManager, launched, v8 } = createSession();
+
+        await session.callLaunch(
+            {
+                program: "/fixtures/fake-qml-app",
+                args: [ "--mode", "demo", "-qmljsdebugger=old" ],
+                cwd: "/fixtures",
+                env: { QML_IMPORT_PATH: "/fixtures/qml" },
+                host: "127.0.0.1",
+                port: 23456,
+                paths: { "qrc:/qml": "/fixtures/qml" },
+                services: [ "DebugMessages", "QmlDebugger", "V8Debugger" ],
+                block: true
+            }
+        );
+
+        assert.strictEqual(launched.length, 1);
+        assert.strictEqual(launched[0].program, "/fixtures/fake-qml-app");
+        assert.deepStrictEqual(launched[0].args, [ "--mode", "demo", "-qmljsdebugger=host:127.0.0.1,port:23456,block,services:DebugMessages,QmlDebugger,V8Debugger" ]);
+        assert.strictEqual(launched[0].cwd, "/fixtures");
+        assert.strictEqual(launched[0].env.QML_IMPORT_PATH, "/fixtures/qml");
+        assert.strictEqual(packetManager.host, "127.0.0.1");
+        assert.strictEqual(packetManager.port, 23456);
+        assert.strictEqual(v8.handshakeCount, 1);
+    });
+
     it("maps stack traces, scopes, variables and evaluate results to DAP", async () =>
     {
         const { session, v8 } = createSession();
@@ -399,13 +476,17 @@ describe("QmlDebugSession", () =>
 
         const evaluate = await session.callEvaluate({ expression: "title", frameId: 3, context: "watch" });
         assert.strictEqual(evaluate.body!.result, "\"hello\"");
+
+        const hover = await session.callEvaluate({ expression: "title", context: "hover" });
+        assert.strictEqual(hover.body!.result, "\"hello\"");
     });
 
-    it("routes stepping, exception and disconnect requests to mocked services", async () =>
+    it("routes pause, stepping, exception and disconnect requests to mocked services", async () =>
     {
         const { session, packetManager, v8, declarative } = createSession();
 
-        await session.callSetExceptionBreakpoints([ "all" ]);
+        await session.callSetExceptionBreakpoints([ "all", "uncaught" ]);
+        await session.callPause();
         await session.callStep("in");
         await session.callStep("next");
         await session.callStep("out");
@@ -413,8 +494,9 @@ describe("QmlDebugSession", () =>
         await session.callAttach({ host: "localhost", port: 12150, paths: {} });
         await session.callDisconnect();
 
-        assert.deepStrictEqual(v8.exceptionRequest, { type: "all", enabled: true });
+        assert.deepStrictEqual(v8.exceptionRequests, [ { type: "all", enabled: true }, { type: "uncaught", enabled: true } ]);
         assert.deepStrictEqual(v8.continueCalls.slice(0, 4), [ { stepAction: "in", stepCount: 1 }, { stepAction: "next", stepCount: 1 }, { stepAction: "out", stepCount: 1 }, { stepAction: undefined, stepCount: undefined } ]);
+        assert.strictEqual(session.events.some((event) => event.event === "stopped" && (event as DebugProtocol.StoppedEvent).body.reason === "pause"), true);
         assert.strictEqual(packetManager.connectCount, 1);
         assert.strictEqual(packetManager.disconnectCount, 1);
         assert.strictEqual(declarative.handshakeCount, 1);

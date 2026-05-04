@@ -10,6 +10,31 @@ export default class ServiceDebugMessages
 {
     private session? : QmlDebugSession;
 
+    /** Convert a Qt message type id into a display label and DAP output category. */
+    private convertMessageType(type : number) : { label : string; category : "stdout" | "stderr" | "console" }
+    {
+        switch (type)
+        {
+            case 0:
+                return { label: "Debug", category: "stdout" };
+
+            case 1:
+                return { label: "Warning", category: "stderr" };
+
+            case 2:
+                return { label: "Critical", category: "stderr" };
+
+            case 3:
+                return { label: "Fatal", category: "stderr" };
+
+            case 4:
+                return { label: "Info", category: "stdout" };
+
+            default:
+                return { label: "Unknown", category: "console" };
+        }
+    }
+
     protected packetReceived(packet: Packet): void
     {
         Log.trace("ServiceDebugMessages.packetReceived", [ packet ]);
@@ -26,52 +51,25 @@ export default class ServiceDebugMessages
         const category = packet.readStringUTF8();
         const elapsedSeconds = Number(packet.readInt64BE() / BigInt(1000000000));
 
-        let typeText = "";
-        switch (type)
-        {
-            case 0:
-                typeText = "Debug";
-                break;
+        const typeInfo = this.convertMessageType(type);
+        const sourcePath = this.session?.mapPathFrom(filename) ?? filename;
 
-            case 1:
-                typeText = "Warning";
-                break;
-
-            case 2:
-                typeText = "Critical";
-                break;
-
-            case 3:
-                typeText = "Fatal";
-                break;
-
-            case 4:
-                typeText = "Info";
-                break;
-
-            default:
-                typeText = "Unkown";
-                break;
-        }
-
-        const outputEvent : DebugProtocol.OutputEvent = new OutputEvent(typeText + ":  " + message, "console");
+        const outputEvent : DebugProtocol.OutputEvent = new OutputEvent(typeInfo.label + ":  " + message + "\n", typeInfo.category);
         outputEvent.body.source =
         {
-            path: filename,
+            path: sourcePath,
         };
         outputEvent.body.line = line;
         outputEvent.body.data =
         {
-            type: typeText,
+            type: typeInfo.label,
             timestamp: elapsedSeconds,
-            source: filename,
+            source: sourcePath,
             line: line,
             category: category,
             functionName: functionName,
             message: message
         };
-
-        console.log(messageHeader + " " + elapsedSeconds + "s " + typeText + ": " + message);
 
         this.session?.sendEvent(outputEvent);
     }
@@ -80,7 +78,7 @@ export default class ServiceDebugMessages
     {
         Log.trace("ServiceDebugMessages.initialize", []);
 
-        const outputGroupEvent : DebugProtocol.OutputEvent = new OutputEvent("QmlDebug Ouput", "console");
+        const outputGroupEvent : DebugProtocol.OutputEvent = new OutputEvent("QML Debug Output", "console");
         outputGroupEvent.body.group = "start";
         this.session?.sendEvent(outputGroupEvent);
     }
@@ -89,7 +87,7 @@ export default class ServiceDebugMessages
     {
         Log.trace("ServiceDebugMessages.deinitialize", []);
 
-        const outputGroupEvent : DebugProtocol.OutputEvent = new OutputEvent("QmlDebug Ouput", "console");
+        const outputGroupEvent : DebugProtocol.OutputEvent = new OutputEvent("QML Debug Output", "console");
         outputGroupEvent.body.group = "end";
         this.session?.sendEvent(outputGroupEvent);
     }

@@ -46,6 +46,7 @@ import {
     isQmlContinueResponse,
     isQmlEvent,
     isQmlMessage,
+    isQmlRequest,
     isQmlResponse
 } from "@qml-debug/qml-messages";
 
@@ -377,6 +378,20 @@ export default class ServiceV8Debugger
             },
             isQmlContinueRequest,
             isQmlContinueResponse
+        );
+
+        return result;
+    }
+
+    public async requestPause() : Promise<QmlResponse<undefined>>
+    {
+        Log.trace("ServiceV8Debugger.requestPause", []);
+
+        const result = await this.makeRequest<object, QmlResponse<undefined>>(
+            "suspend",
+            {},
+            (value : any) : boolean => { return isQmlRequest(value) && value.command === "suspend"; },
+            (value : any) : boolean => { return isQmlResponse(value) && value.command === "suspend"; }
         );
 
         return result;

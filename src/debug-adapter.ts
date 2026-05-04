@@ -8,6 +8,7 @@ import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/qml-mes
 import { QmlFrame, QmlVariable } from "@qml-debug/qml-types";
 
 import path = require("path");
+import { ChildProcess, spawn } from "child_process";
 import * as vscode from "vscode";
 import { InitializedEvent, LoggingDebugSession, Response, StoppedEvent, TerminatedEvent, Thread, StackFrame, Source, Scope, Variable, InvalidatedEvent } from "@vscode/debugadapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
@@ -33,6 +34,45 @@ interface QmlDebugSessionAttachArguments extends DebugProtocol.AttachRequestArgu
     /** Mapping from virtual QML paths such as qrc:/qml to local filesystem folders. */
     paths : { [key: string] : string };
 }
+
+/** Launch configuration accepted by the QML debug adapter. */
+interface QmlDebugSessionLaunchArguments extends DebugProtocol.LaunchRequestArguments
+{
+    /** Executable Qt/QML application path. */
+    program : string;
+    /** Application arguments supplied before the generated QML debugger argument. */
+    args? : string[];
+    /** Working directory for the launched application. */
+    cwd? : string;
+    /** Extra environment variables for the launched application. */
+    env? : { [key: string] : string };
+    /** Hostname or IP address where the Qt QML debug server will listen. */
+    host? : string;
+    /** TCP port where the Qt QML debug server will listen. */
+    port? : number;
+    /** Virtual-to-physical source path mappings. */
+    paths? : { [key: string] : string };
+    /** Qt debug services requested from `-qmljsdebugger`. */
+    services? : string[];
+    /** Whether to add `block` so the application waits for the debugger before running QML. */
+    block? : boolean;
+}
+
+/** Process launch request created from a DAP launch configuration. */
+interface LaunchProcessOptions
+{
+    /** Executable to start. */
+    program : string;
+    /** Final argv passed to the executable. */
+    args : string[];
+    /** Optional process working directory. */
+    cwd? : string;
+    /** Optional environment variable overrides. */
+    env? : NodeJS.ProcessEnv;
+}
+
+/** Function used to start the debuggee process; injectable for tests. */
+type ProcessLauncher = (options : LaunchProcessOptions) => ChildProcess;
 
 /** Common lifecycle methods implemented by every Qt debug service wrapper. */
 interface DebugLifecycleService
@@ -75,6 +115,8 @@ interface V8DebuggerService extends DebugLifecycleService
     requestEvaluate(frameId : number, expressionParam : string) : Promise<any>;
     /** Continue execution, optionally with a step action. */
     requestContinue(stepAction? : "in" | "out" | "next", stepCount? : 1) : Promise<any>;
+    /** Interrupt the running QML/JS runtime when the Qt service supports it. */
+    requestPause() : Promise<any>;
 }
 
 /** Optional constructor dependencies used by unit tests to replace Qt services with mocks. */
@@ -90,6 +132,8 @@ interface QmlDebugSessionDependencies
     v8debugger? : V8DebuggerService;
     /** QDeclarativeDebugClient service wrapper. */
     declarativeDebugClient? : DeclarativeDebugClientService;
+    /** Process launcher used by launch mode. */
+    processLauncher? : ProcessLauncher;
 }
 
 /** Convert a Qt/V8 scope type id into a human-readable DAP scope name. */
@@ -194,6 +238,10 @@ export class QmlDebugSession extends LoggingDebugSession
     private sortMembers = true;
     /** True after the Qt debug service handshake has completed. */
     private debuggerConnected = false;
+    /** Process started by launch mode, if this session owns one. */
+    private launchedProcess? : ChildProcess;
+    /** Process launcher used by launch mode. */
+    private processLauncher : ProcessLauncher;
 
     public get packetManager() : PacketManager
     {
@@ -333,6 +381,45 @@ export class QmlDebugSession extends LoggingDebugSession
         }
     }
 
+    /** Build the `-qmljsdebugger` argument Qt expects for QML debugging. */
+    public buildQmlDebuggerArgument(args : QmlDebugSessionLaunchArguments) : string
+    {
+        const host = args.host ?? "localhost";
+        const port = args.port ?? 12150;
+        const services = args.services ?? [ "DebugMessages", "QmlDebugger", "V8Debugger", "QmlInspector" ];
+        const fragments = [ "host:" + host, "port:" + port ];
+
+        if (args.block !== false)
+            fragments.push("block");
+
+        fragments.push("services:" + services.join(","));
+
+        return "-qmljsdebugger=" + fragments.join(",");
+    }
+
+    /** Start the debuggee process for launch mode and return once the process has been spawned. */
+    private launchDebuggee(args : QmlDebugSessionLaunchArguments) : void
+    {
+        const applicationArgs = (args.args ?? []).filter((current) : boolean => { return !current.startsWith("-qmljsdebugger="); });
+        const finalArgs = [ ...applicationArgs, this.buildQmlDebuggerArgument(args) ];
+        const environment = args.env === undefined ? process.env : { ...process.env, ...args.env };
+
+        this.launchedProcess = this.processLauncher(
+            {
+                program: args.program,
+                args: finalArgs,
+                cwd: args.cwd,
+                env: environment
+            }
+        );
+
+        this.launchedProcess.once("exit", () =>
+        {
+            this.debuggerConnected = false;
+            this.sendEvent(new TerminatedEvent());
+        });
+    }
+
     /** Handle asynchronous Qt/V8 runtime events and translate them into DAP events. */
     public onEvent(event : QmlEvent<any>) : void
     {
@@ -380,17 +467,16 @@ export class QmlDebugSession extends LoggingDebugSession
         response.body.supportsFunctionBreakpoints = false;
         response.body.supportsConditionalBreakpoints = false;
         response.body.supportsHitConditionalBreakpoints = false;
-        /*WILL BE IMPLEMENTED*/response.body.supportsEvaluateForHovers = false;
+        response.body.supportsEvaluateForHovers = true;
         response.body.exceptionBreakpointFilters = [
             {
                 label: "All Exceptions",
                 filter: "all",
-            }
-            // NOT SUPPORTED YET
-            /*{
+            },
+            {
                 label: "Uncaught Exceptions",
                 filter: "uncaught",
-            }*/
+            }
         ];
         response.body.supportsStepBack = false;
         /*WILL BE IMPLEMENTED*/response.body.supportsSetVariable = false;
@@ -443,17 +529,37 @@ export class QmlDebugSession extends LoggingDebugSession
         this.sendResponse(response);
     }
 
-    protected async launchRequest(response: DebugProtocol.LaunchResponse, args: DebugProtocol.LaunchRequestArguments, request?: DebugProtocol.Request) : Promise<void>
+    protected async launchRequest(response: DebugProtocol.LaunchResponse, args: QmlDebugSessionLaunchArguments, request?: DebugProtocol.Request) : Promise<void>
     {
         Log.trace("QmlDebugSession.launchRequest", [ response, args, request ]);
 
-        this.sendErrorResponse(response,
-            {
-                id: 1003,
-                format: "QML Debug: launch is not implemented yet. Use an attach configuration with a running application started with -qmljsdebugger.",
-                showUser: true
-            }
-        );
+        if (args.program === undefined || args.program === "")
+        {
+            this.failRequest(response, 1003, "Launch requires a program path.");
+            return;
+        }
+
+        this.packetManager.host = args.host ?? "localhost";
+        this.packetManager.port = args.port ?? 12150;
+        this.setPathMappings(args.paths);
+
+        try
+        {
+            this.launchDebuggee(args);
+            await this.packetManager.connect();
+            await this.declarativeDebugClient.handshake();
+            await this.v8debugger.handshake();
+            this.debuggerConnected = true;
+            await this.synchronizeBreakpoints();
+            this.sendResponse(response);
+        }
+        catch (error)
+        {
+            this.raiseError(response, 1003, "Cannot launch QML debuggee. Program: " + args.program + ". " + error);
+            return;
+        }
+
+        this.sendEvent(new InitializedEvent());
     }
 
     protected async configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments, request?: DebugProtocol.Request): Promise<void>
@@ -501,6 +607,9 @@ export class QmlDebugSession extends LoggingDebugSession
             await this.declarativeDebugClient.deinitialize();
             await this.packetManager.disconnect();
             this.debuggerConnected = false;
+
+            if (this.launchedProcess !== undefined && !this.launchedProcess.killed)
+                this.launchedProcess.kill();
 
             this.sendResponse(response);
         }
@@ -651,8 +760,10 @@ export class QmlDebugSession extends LoggingDebugSession
 
         try
         {
-            const result = await this.v8debugger.requestSetExceptionBreakpoint("all", args.filters.indexOf("all") !== -1);
-            if (!result.success)
+            const filters = new Set(args.filters);
+            const allResult = await this.v8debugger.requestSetExceptionBreakpoint("all", filters.has("all"));
+            const uncaughtResult = await this.v8debugger.requestSetExceptionBreakpoint("uncaught", filters.has("uncaught"));
+            if (!allResult.success || !uncaughtResult.success)
                 response.success = false;
 
             this.sendResponse(response);
@@ -662,8 +773,6 @@ export class QmlDebugSession extends LoggingDebugSession
             this.failRequest(response, 1005, "Request failed. Request: \"setexceptionbreak\". " + error);
         }
 
-        // NOT SUPPORTED YET
-        //this.v8debugger.requestSetExceptionBreakpoint("uncaught", args.filters.indexOf("uncaught") !== -1);
     }
 
     protected async threadsRequest(response: DebugProtocol.ThreadsResponse, request?: DebugProtocol.Request): Promise<void>
@@ -926,7 +1035,8 @@ export class QmlDebugSession extends LoggingDebugSession
 
         try
         {
-            const result = await this.v8debugger.requestEvaluate(args.frameId!, args.expression);
+            const frameId = args.frameId ?? 0;
+            const result = await this.v8debugger.requestEvaluate(frameId, args.expression);
             if (!result.success)
             {
                 response.success = false;
@@ -976,6 +1086,30 @@ export class QmlDebugSession extends LoggingDebugSession
         catch (error)
         {
             this.failRequest(response, 1005, "Request failed. Request: \"evaluate\". " + error);
+        }
+    }
+
+    protected async pauseRequest(response: DebugProtocol.PauseResponse, args: DebugProtocol.PauseArguments, request?: DebugProtocol.Request) : Promise<void>
+    {
+        Log.trace("QmlDebugSession.pauseRequest", [ response, args, request ]);
+
+        try
+        {
+            const result = await this.v8debugger.requestPause();
+            if (!result.success)
+            {
+                response.success = false;
+                this.sendResponse(response);
+                return;
+            }
+
+            this.breaked = true;
+            this.sendResponse(response);
+            this.sendEvent(new StoppedEvent("pause", this.mainQmlThreadId));
+        }
+        catch (error)
+        {
+            this.failRequest(response, 1005, "Request failed. Request: \"pause\". " + error);
         }
     }
 
@@ -1085,6 +1219,16 @@ export class QmlDebugSession extends LoggingDebugSession
         this.debugMessages = dependencies.debugMessages ?? new ServiceDebugMessages(this);
         this.v8debugger = dependencies.v8debugger ?? new ServiceNativeDebugger(this);
         this.declarativeDebugClient = dependencies.declarativeDebugClient ?? new ServiceDeclarativeDebugClient(this);
+        this.processLauncher = dependencies.processLauncher ?? ((options : LaunchProcessOptions) : ChildProcess =>
+        {
+            return spawn(options.program, options.args,
+                {
+                    cwd: options.cwd,
+                    env: options.env,
+                    stdio: "ignore"
+                }
+            );
+        });
 
         this.filterFunctions = vscode.workspace.getConfiguration("qml-debug").get<boolean>("filterFunctions", true);
         this.sortMembers = vscode.workspace.getConfiguration("qml-debug").get<boolean>("sortMembers", true);

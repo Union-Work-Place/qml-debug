@@ -177,6 +177,81 @@
                                 "default": true
                             }
                         }
+                    },
+                    "launch": {
+                        "required": [
+                            "program"
+                        ],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Path to the Qt/QML application executable."
+                            },
+                            "args": {
+                                "type": "array",
+                                "description": "Application arguments. The adapter appends -qmljsdebugger automatically.",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "default": []
+                            },
+                            "cwd": {
+                                "type": "string",
+                                "description": "Working directory for the launched application."
+                            },
+                            "env": {
+                                "type": "object",
+                                "description": "Additional environment variables for the launched application.",
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
+                            },
+                            "host": {
+                                "type": "string",
+                                "description": "Hostname (or ip address) where the target program's debug service will listen.",
+                                "default": "localhost"
+                            },
+                            "port": {
+                                "type": "number",
+                                "description": "Port where the target program's debug service will listen.",
+                                "default": 12150
+                            },
+                            "paths": {
+                                "description": "List of qml source folders resource paths (qrc:/) to physical path mappings.",
+                                "type": "object",
+                                "patternProperties": {
+                                    ".*": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            "services": {
+                                "type": "array",
+                                "description": "Qt QML debug services requested from -qmljsdebugger.",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "default": [
+                                    "DebugMessages",
+                                    "QmlDebugger",
+                                    "V8Debugger",
+                                    "QmlInspector"
+                                ]
+                            },
+                            "block": {
+                                "type": "boolean",
+                                "description": "Add block to -qmljsdebugger so the QML runtime waits for the debugger before executing.",
+                                "default": true
+                            },
+                            "trace": {
+                                "type": "boolean",
+                                "description": "Enable logging of the Debug Adapter Protocol.",
+                                "default": true
+                            }
+                        }
                     }
                 },
                 "initialConfigurations": [
@@ -187,6 +262,18 @@
                         "host": "localhost",
                         "port": 12150,
                         "paths": [],
+                        "trace": false
+                    },
+                    {
+                        "type": "qml",
+                        "request": "launch",
+                        "name": "Launch QML Application",
+                        "program": "${workspaceFolder}/<your_qml_application>",
+                        "args": [],
+                        "host": "localhost",
+                        "port": 12150,
+                        "paths": {},
+                        "block": true,
                         "trace": false
                     }
                 ],
@@ -203,6 +290,23 @@
                             "paths": {
                                 "qrc:/qml": "^\"\\${workspaceFolder}/<Folder that contain qml files>\""
                             }
+                        }
+                    },
+                    {
+                        "label": "QML Debug: Launch",
+                        "description": "Launch a Qt/QML application and attach the QML debugger automatically.",
+                        "body": {
+                            "name": "QML Debug: Launch",
+                            "type": "qml",
+                            "request": "launch",
+                            "program": "^\"\\${workspaceFolder}/<your_qml_application>\"",
+                            "args": [],
+                            "host": "localhost",
+                            "port": 12150,
+                            "paths": {
+                                "qrc:/qml": "^\"\\${workspaceFolder}/qml\""
+                            },
+                            "block": true
                         }
                     }
                 ]
