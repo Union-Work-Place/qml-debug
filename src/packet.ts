@@ -67,7 +67,7 @@ export default class Packet
 
     public readEOF() : boolean
     {
-        return this.readOffset >= this.readOffset;
+        return this.readOffset >= this.size;
     }
 
     public readTell() : number
@@ -190,7 +190,7 @@ export default class Packet
     public readBoolean() : boolean
     {
         const value = this.data.readUInt8(this.readOffset);
-        this.readOffset += 8;
+        this.readOffset += 1;
         return (value === 0 ? false : true);
     }
 
@@ -362,7 +362,7 @@ export default class Packet
     public appendFloat(value : number) : void
     {
         const offset = this.size;
-        this.expand(8);
+        this.expand(4);
         this.data.writeFloatBE(value, offset);
     }
 

@@ -1,0 +1,27 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "rootDir": ".",
+        "outDir": "out-test",
+        "target": "ES2019",
+        "declaration": false,
+        "sourceMap": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "types": [
+            "node",
+            "vscode",
+            "mocha"
+        ]
+    },
+    "include": [
+        "src",
+        "test"
+    ],
+    "exclude": [
+        "node_modules",
+        "out",
+        "out-test",
+        "dist"
+    ]
+}

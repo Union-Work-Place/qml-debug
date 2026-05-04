@@ -219,6 +219,7 @@
         "compile": "tsc -p ./",
         "lint": "eslint src --ext ts",
         "typecheck": "tsc -p tsconfig.json --noEmit",
+        "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
         "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --external:vscode --format=cjs --platform=node --sourcemap --outfile=dist/extension.js",
         "watch": "npm run -S esbuild-base -- --sources-content=false --watch",
         "build": "npm run -S esbuild-base -- --sources-content=false",
@@ -226,7 +227,10 @@
         "publish": "vsce publish",
         "publish-pre-release": "vsce publish --pre-release",
         "vscode:prepublish": "rimraf dist && npm run -S esbuild-base -- --minify",
-        "test": "npm run typecheck",
+        "test:compile": "tsc -p tsconfig.test.json",
+        "test:unit": "npm run test:compile && mocha --require ./out-test/test/bootstrap.js \"out-test/test/**/*.test.js\"",
+        "test:coverage": "nyc --reporter=text --reporter=html npm run test:unit",
+        "test": "npm run typecheck && npm run test:unit",
         "clean": "rm -rfv ./out/* ./dist/*",
         "dist-clean": "rm -rfv ./package-lock.json ./node_modules ./out ./dist"
     },
@@ -243,6 +247,7 @@
         "eslint": "^8.1.0",
         "glob": "^7.1.7",
         "mocha": "^9.1.3",
+        "nyc": "^15.1.0",
         "typescript": "^4.4.4",
         "vsce": "^2.6.4"
     },

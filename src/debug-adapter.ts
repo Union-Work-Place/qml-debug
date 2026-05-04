@@ -207,7 +207,7 @@ export class QmlDebugSession extends LoggingDebugSession
         this.columnsStartFromZero = !args.columnsStartAt1;
 
         response.body = {};
-        /*WILL BE IMPLEMENTED*/response.body.supportsConfigurationDoneRequest = false;
+        response.body.supportsConfigurationDoneRequest = true;
         response.body.supportsFunctionBreakpoints = false;
         response.body.supportsConditionalBreakpoints = false;
         response.body.supportsHitConditionalBreakpoints = false;
@@ -278,13 +278,27 @@ export class QmlDebugSession extends LoggingDebugSession
     {
         Log.trace("QmlDebugSession.launchRequest", [ response, args, request ]);
 
+        this.sendErrorResponse(response,
+            {
+                id: 1003,
+                format: "QML Debug: launch is not implemented yet. Use an attach configuration with a running application started with -qmljsdebugger.",
+                showUser: true
+            }
+        );
+    }
+
+    protected async configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments, request?: DebugProtocol.Request): Promise<void>
+    {
+        Log.trace("QmlDebugSession.configurationDoneRequest", [ response, args, request ]);
+
+        this.sendResponse(response);
     }
 
     protected async attachRequest(response: DebugProtocol.AttachResponse, args: QmlDebugSessionAttachArguments, request?: DebugProtocol.Request): Promise<void>
     {
         Log.trace("QmlDebugSession.attachRequest", [ response, args, request ]);
 
-        this. packetManager.host = args.host;
+        this.packetManager.host = args.host;
         this.packetManager.port = args.port;
         if (args.paths !== undefined)
             this.pathMappings = new Map(Object.entries(args.paths));
@@ -315,6 +329,8 @@ export class QmlDebugSession extends LoggingDebugSession
             await this.qmlDebugger.deinitialize();
             await this.declarativeDebugClient.deinitialize();
             await this.packetManager.disconnect();
+
+            this.sendResponse(response);
         }
         catch (error)
         {
@@ -327,15 +343,30 @@ export class QmlDebugSession extends LoggingDebugSession
     {
         Log.trace("QmlDebugSession.setBreakPointsRequest", [ response, args, request ]);
 
+        const sourcePath = args.source.path;
+        const requestedBreakpoints = args.breakpoints ?? [];
+
+        if (sourcePath === undefined)
+        {
+            this.sendErrorResponse(response,
+                {
+                    id: 1005,
+                    format: "QML Debug: Cannot set breakpoints without a source path.",
+                    showUser: true
+                }
+            );
+            return;
+        }
+
         for (let i = 0; i < this.breakpoints.length; i++)
         {
             const currentExisting = this.breakpoints[i];
 
             let found = false;
-            for (let n = 0; n < args.breakpoints!.length; n++)
+            for (let n = 0; n < requestedBreakpoints.length; n++)
             {
-                const current = args.breakpoints![n];
-                if (currentExisting.filename === args.source && currentExisting.line === current.line)
+                const current = requestedBreakpoints[n];
+                if (currentExisting.filename === sourcePath && currentExisting.line === current.line)
                 {
                     found = true;
                     break;
@@ -345,6 +376,7 @@ export class QmlDebugSession extends LoggingDebugSession
             if (!found)
             {
                 this.breakpoints.splice(i, 1);
+                i--;
 
                 try
                 {
@@ -359,19 +391,20 @@ export class QmlDebugSession extends LoggingDebugSession
                 catch (error)
                 {
                     this.raiseError(response, 1005, "Request failed. Request: \"removebreakpoint\". " + error);
+                    return;
                 }
             }
         }
 
-        for (let i = 0; i < args.breakpoints!.length; i++)
+        for (let i = 0; i < requestedBreakpoints.length; i++)
         {
-            const current = args.breakpoints![i];
+            const current = requestedBreakpoints[i];
 
             let found = false;
             for (let n = 0; n < this.breakpoints.length; n++)
             {
                 const currentExisting = this.breakpoints![n];
-                if (currentExisting.filename === args.source.path! &&
+                if (currentExisting.filename === sourcePath &&
                     currentExisting.line === current.line)
                 {
                     found = true;
@@ -387,7 +420,7 @@ export class QmlDebugSession extends LoggingDebugSession
 
             try
             {
-                const result = await this.v8debugger.requestSetBreakpoint(this.mapPathTo(args.source.path!), this.mapLineNumberTo(current.line));
+                const result = await this.v8debugger.requestSetBreakpoint(this.mapPathTo(sourcePath), this.mapLineNumberTo(current.line));
                 if (!result.success)
                 {
                     response.success = false;
@@ -400,12 +433,13 @@ export class QmlDebugSession extends LoggingDebugSession
             catch (error)
             {
                 this.raiseError(response, 1005, "Request failed. Request: \"setbreakpoint\". " + error);
+                return;
             }
 
             const newBreakpoint : QmlBreakpoint =
             {
                 id: breakpointId,
-                filename: args.source.path!,
+                filename: sourcePath,
                 line: current.line,
             };
             this.breakpoints.push(newBreakpoint);
@@ -414,7 +448,7 @@ export class QmlDebugSession extends LoggingDebugSession
         response.body =
         {
             breakpoints: this.breakpoints
-                .filter((value) : boolean => { return value.filename === args.source.path!; })
+                .filter((value) : boolean => { return value.filename === sourcePath; })
                 .map<DebugProtocol.Breakpoint>(
                     (value, index, array) : DebugProtocol.Breakpoint =>
                     {
@@ -434,7 +468,20 @@ export class QmlDebugSession extends LoggingDebugSession
 
     protected async setExceptionBreakPointsRequest(response: DebugProtocol.SetExceptionBreakpointsResponse, args: DebugProtocol.SetExceptionBreakpointsArguments, request?: DebugProtocol.Request): Promise<void>
     {
-        this.v8debugger.requestSetExceptionBreakpoint("all", args.filters.indexOf("all") !== -1);
+        Log.trace("QmlDebugSession.setExceptionBreakPointsRequest", [ response, args, request ]);
+
+        try
+        {
+            const result = await this.v8debugger.requestSetExceptionBreakpoint("all", args.filters.indexOf("all") !== -1);
+            if (!result.success)
+                response.success = false;
+
+            this.sendResponse(response);
+        }
+        catch (error)
+        {
+            this.raiseError(response, 1005, "Request failed. Request: \"setexceptionbreak\". " + error);
+        }
 
         // NOT SUPPORTED YET
         //this.v8debugger.requestSetExceptionBreakpoint("uncaught", args.filters.indexOf("uncaught") !== -1);
@@ -582,88 +629,90 @@ export class QmlDebugSession extends LoggingDebugSession
 
             const variables = Object.values(result.body);
 
-            if (variables[0].properties === undefined)
+            response.body =
+            {
+                variables: []
+            };
+
+            if (variables.length === 0 || variables[0].properties === undefined)
             {
                 this.sendResponse(response);
                 return;
             }
 
             let variableCount = 0;
-            response.body =
-            {
-                variables: variables[0].properties!
-                    .filter(
-                        (value, index, array) : boolean =>
+            response.body.variables = variables[0].properties!
+                .filter(
+                    (value, index, array) : boolean =>
+                    {
+                        if (this.filterFunctions && value.type === "function")
+                            return false;
+
+                        if (args.start !== undefined)
                         {
-                            if (this.filterFunctions && value.type === "function")
+                            if (index < args.start)
+                                return false;
+                        }
+
+                        if (args.count !== undefined)
+                        {
+                            if (variableCount >= args.count)
                                 return false;
 
-                            if (args.start !== undefined)
-                            {
-                                if (index < args.start)
-                                    return false;
-                            }
-
-                            if (args.count !== undefined)
-                            {
-                                if (variableCount >= args.count)
-                                    return false;
-
-                                variableCount++;
-                            }
-
-                            return true;
+                            variableCount++;
                         }
-                    )
-                    .map<Variable>(
-                        (qmlVariable, index, array) =>
+
+                        return true;
+                    }
+                )
+                .map<Variable>(
+                    (qmlVariable, index, array) =>
+                    {
+                        const dapVariable : DebugProtocol.Variable =
                         {
-                            const dapVariable : DebugProtocol.Variable =
+                            name: qmlVariable.name!,
+                            type: qmlVariable.type,
+                            value: "" + qmlVariable.value,
+                            variablesReference: 0,
+                            namedVariables: 0,
+                            indexedVariables: 0,
+                            presentationHint:
                             {
-                                name: qmlVariable.name!,
-                                type: qmlVariable.type,
-                                value: "" + qmlVariable.value,
-                                variablesReference: 0,
-                                namedVariables: 0,
-                                indexedVariables: 0,
-                                presentationHint:
-                                {
-                                    kind: "property"
-                                }
-                            };
-
-                            if (qmlVariable.type === "object")
-                            {
-                                if (qmlVariable.value !== null)
-
-                                    dapVariable.value = "object";
-                                else
-                                    dapVariable.value = "null";
-
-                                dapVariable.namedVariables = qmlVariable.value;
-                                if (dapVariable.namedVariables !== 0)
-                                    dapVariable.variablesReference = this.mapHandleFrom(qmlVariable.ref!);
+                                kind: "property"
                             }
-                            else if (qmlVariable.type === "function")
-                            {
-                                dapVariable.value = "function";
-                                dapVariable.presentationHint!.kind = "method";
-                            }
-                            else if (qmlVariable.type === "undefined")
-                            {
-                                dapVariable.value = "undefined";
-                            }
-                            else if (qmlVariable.type === "string")
-                            {
-                                dapVariable.value = "\"" + qmlVariable.value + "\"";
-                            }
+                        };
 
-                            Log.debug(() => { return "DAP Variable: " + JSON.stringify(dapVariable); });
+                        if (qmlVariable.type === "object")
+                        {
+                            if (qmlVariable.value !== null)
 
-                            return dapVariable;
+                                dapVariable.value = "object";
+                            else
+                                dapVariable.value = "null";
+
+                            dapVariable.namedVariables = qmlVariable.value;
+                            if (dapVariable.namedVariables !== 0)
+                                dapVariable.variablesReference = this.mapHandleFrom(qmlVariable.ref!);
                         }
-                    )
-            };
+                        else if (qmlVariable.type === "function")
+                        {
+                            dapVariable.value = "function";
+                            dapVariable.presentationHint!.kind = "method";
+                        }
+                        else if (qmlVariable.type === "undefined")
+                        {
+                            dapVariable.value = "undefined";
+                        }
+                        else if (qmlVariable.type === "string")
+                        {
+                            dapVariable.value = "\"" + qmlVariable.value + "\"";
+                        }
+
+                        Log.debug(() => { return "DAP Variable: " + JSON.stringify(dapVariable); });
+
+                        return dapVariable;
+                    }
+                );
 
             if (this.sortMembers)
             {

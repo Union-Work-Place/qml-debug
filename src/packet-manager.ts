@@ -1,5 +1,5 @@
 import { TerminatedEvent } from "@vscode/debugadapter";
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import type { QmlDebugSession } from "@qml-debug/debug-adapter";
 import Log from "@qml-debug/log";
 import Packet from "@qml-debug/packet";
 
@@ -114,7 +114,7 @@ export default class PacketManager
 
         for (const current of this.packetHandlers)
         {
-            if (current.name !== header || current.name === "*")
+            if (current.name !== header && current.name !== "*")
                 continue;
 
             const result = current.callback(header, packet);
@@ -134,10 +134,13 @@ export default class PacketManager
         while (true)
         {
             let targetSize : number;
-            if (this.receiveBuffer.length > 4)
+            if (this.receiveBuffer.length >= 4)
                 targetSize = this.receiveBuffer.readUInt32LE();
             else
                 targetSize = Number.MAX_SAFE_INTEGER;
+
+            if (targetSize < 4)
+                throw new Error("PacketManager::receivePacket: Invalid packet size " + targetSize + ".");
 
             if (this.receiveBuffer.length === targetSize)
             {
@@ -188,7 +191,7 @@ export default class PacketManager
             if (count === buffer.length)
                 return;
 
-            buffer = buffer.slice(count, buffer.length - count);
+            buffer = buffer.slice(count);
         }
     }
 

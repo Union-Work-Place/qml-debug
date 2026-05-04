@@ -69,5 +69,5 @@ export function activate(context: vscode.ExtensionContext) : void
 
 export function deactivate() : void
 {
-    Log.trace("extension.deactivate", [ context ]);
+    Log.trace("extension.deactivate", []);
 }

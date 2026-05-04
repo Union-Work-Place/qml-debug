@@ -5,6 +5,10 @@
         "lib": [
             "ES2020"
         ],
+        "types": [
+            "node",
+            "vscode"
+        ],
 
         "rootDir": "src",
         "outDir": "out",

@@ -5,8 +5,8 @@
 	"tasks": [
         {
             "label": "npm: build",
-            "type": "npm",
-            "script": "build",
+            "type": "shell",
+            "command": "npm run build",
             "isBackground": false,
             "group": {
                 "isDefault": true,
@@ -16,8 +16,8 @@
         },
         {
             "label": "npm: watch",
-            "type": "npm",
-            "script": "watch",
+            "type": "shell",
+            "command": "npm run watch",
             "group": "build",
             "problemMatcher": "$esbuild-watch",
             "isBackground": true
