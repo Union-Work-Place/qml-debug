@@ -9,16 +9,6 @@
   </a>
 </p>
 
-🏠 [Homepage](https://github.com/orcun-gokbulut/qml-debug)
-
-## <font color="red"><b>WARNING !!!</b></font>
-
-This is a beta release. It may contain bugs and problems. 
-
-Please be patient while using it and report back any problem you have encountered to https://github.com/orcun-gokbulut/qml-debug/issuess
-
-Thank you for using Qml-Debug Beta.
-
 ## Description
 **Short Description:** QML Debuger for VSCode.
 
@@ -160,7 +150,8 @@ You should make sure that cppdbg launch configration launches application with d
 When a QML debug session is active, the Debug view shows two runtime panels:
 
 - `QML Inspector` exposes service availability, interactive selection state, app-on-top state, and the currently selected runtime object ids.
-- `QML Profiler` exposes capture state, requested feature mask, packet counters, byte counts, and a JSON export of the current snapshot.
+- `QML Inspector` also resolves the selected object tree, decoded properties, and context ids for the active runtime selection.
+- `QML Profiler` exposes capture state, requested feature mask, packet counters, byte counts, typed timeline events, and a JSON export of the structured snapshot.
 
 Available commands:
 
@@ -172,7 +163,24 @@ Available commands:
 - `QML Debug: Clear QML Profiler Snapshot`
 - `QML Debug: Export QML Profiler Snapshot`
 
-The profiler view currently captures and exports the negotiated profiler traffic snapshot. It does not yet decode the full Qt Creator timeline format.
+The profiler export now classifies captured packets into transport-level event kinds such as booleans, integers, strings, arrays, and opaque binary payloads. This makes scene graph and binding traffic easier to inspect in VS Code even though it is still not a full Qt Creator semantic decoder.
+
+## Launch Presets
+
+The extension now contributes a profiler-enabled launch preset and a JSON snippet so you do not need to hand-edit the `services` array every time.
+
+- `Launch QML with Inspector + Profiler` appears in generated launch configurations.
+- `qml-debug-launch-profiler` inserts a launch.json snippet with `QmlInspector`, `CanvasFrameRate`, and `EngineControl` enabled.
+
+## Optional Qt-Backed Integration Harness
+
+An optional integration harness now exists in the test suite for real Qt fixtures. It is skipped unless these environment variables are set:
+
+- `QML_DEBUG_QT_FIXTURE_PROGRAM`
+- `QML_DEBUG_QT_FIXTURE_CWD`
+- `QML_DEBUG_QT_FIXTURE_QML_PATH`
+
+Run it with `npm run test:qt-integration` after pointing those variables at a real Qt/QML fixture build.
 
 ## Qt Service Matrix
 
@@ -189,39 +197,15 @@ This means support is capability-based rather than hardcoded to a single Qt rele
 Project is still in development. Current version is fully functional but unstable with lots of potential bugs. In addition to that, there are rooms for improvements in various places.
 Therefore, still work in progress...
 
-### Initial Release Features
-- [x] Qt Datastream Protocol Implementation.
-- [x] Debugging and logging support tools and utilities.
-- [x] Main structure of the application.
-- [x] Handshaking and snakeoil code.
-- [x] Breakpoints
-- [x] Flow Control (Pause, Step, StepIn, StepOut, Continue)
-- [x] Backtrace and Stack Viewer
-- [x] Editor Variable Evaluators
-- [x] Exception Breakpoints
-- [x] Settings
-- [x] Documentation
-- [ ] Extended Documentation
-- [ ] Polishing, Bugfixing, Improving Stability and Hardening for Initial Release
-- [ ] Automatic Attach (Automaticly find Qml application and attach it)
-- [ ] Automatic C++ Debug Launcher (Launch C++ debuger before starting Qml Debug Session)
-- [ ] Automated Unit Tests
-
-### Next Major Version Features
-- [x] Qml Scene Graph Profiler and Debugger
-
-### Really R&D Stuff (Far Future, Requires VSCode future contribution)
-- [ ] Mixed Mode Debugging (Merging Qml and C++ debug sessions into one)
-
 
 ## Author
 👤 **Y. Orçun Gökbulut**
 * Website: https://www.github.com/orcun-gokbulut
 * Github: [@orcun-gokbulut](https://github.com/orcun-gokbulut)
 
-
-## 🤝 Contributing
-Contributions, issues and feature requests are welcome!<br />Feel free to check [issues page](https://github.com/orcun-gokbulut/qml-debug/issues). You can also take a look at the [contributing guide](https://github.com/orcun-gokbulut/qml-debug/blob/master/CONTRIBUTING.md).
+👤 **hospitaler17**
+* Website: https://www.github.com/hospitaler17
+* Github: [@hospitaler17](https://github.com/hospitaler17)
 
 
 ## Copyright & Licenese

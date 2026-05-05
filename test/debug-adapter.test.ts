@@ -94,12 +94,57 @@ class MockQmlDebugger extends MockLifecycleService
 {
     /** Recorded source lookup requests. */
     public objectLookupCalls : { filename : string; lineNumber : number; columnNumber : number }[] = [];
+    /** Recorded metadata tree requests. */
+    public objectTreeCalls : number[][] = [];
 
     /** Return a deterministic object selection for tests. */
     public async requestObjectsForLocation(filename : string, lineNumber : number, columnNumber : number) : Promise<any[]>
     {
         this.objectLookupCalls.push({ filename: filename, lineNumber: lineNumber, columnNumber: columnNumber });
         return [ { debugId: 41 }, { debugId: 42 } ];
+    }
+
+    /** Return a deterministic metadata snapshot for selected objects. */
+    public async requestObjectTreeSnapshot(objectIds : number[]) : Promise<any>
+    {
+        this.objectTreeCalls.push([ ...objectIds ]);
+        return {
+            selectedObjectIds: [ ...objectIds ],
+            objects: [
+                {
+                    debugId: objectIds[0] ?? 41,
+                    className: "QQuickRectangle",
+                    idString: "rootRect",
+                    name: "Rectangle",
+                    source: {
+                        url: "Main.qml",
+                        lineNumber: 12,
+                        columnNumber: 3
+                    },
+                    contextDebugId: 7,
+                    parentDebugId: -1,
+                    propertyCount: 1,
+                    properties: [
+                        {
+                            typeId: 10,
+                            name: "color",
+                            rawValue: "00000008",
+                            valueTypeName: "QString",
+                            valueContents: "red",
+                            hasNotifySignal: true,
+                            decodedValue: "red"
+                        }
+                    ],
+                    children: []
+                }
+            ],
+            contexts: [
+                {
+                    debugId: 7,
+                    objectIds: [ objectIds[0] ?? 41 ]
+                }
+            ]
+        };
     }
 }
 
@@ -164,11 +209,22 @@ class MockProfiler extends MockLifecycleService
         return {
             recording: this.recording,
             requestedFeatureMask: this.requestedFeatureMask,
-            requestedFeatures: [],
+            requestedFeatures: [ "Scene Graph" ],
             flushInterval: this.flushInterval,
-            packetCount: 0,
-            receivedBytes: 0,
-            recentPackets: []
+            packetCount: 1,
+            receivedBytes: 8,
+            recentPackets: [ { timestamp: "2026-05-05T20:00:00.000Z", size: 8, kind: "uint64", hexPreview: "0000000000000008" } ],
+            timelineEvents: [ { timestamp: "2026-05-05T20:00:00.000Z", size: 8, kind: "uint64", hexPreview: "0000000000000008", decodedValue: 8 } ]
+        };
+    }
+
+    /** Return a structured export. */
+    public exportSnapshot() : any
+    {
+        return {
+            summary: this.getSnapshot(),
+            eventKinds: [ { kind: "uint64", count: 1 } ],
+            timeline: this.getSnapshot().timelineEvents
         };
     }
 
@@ -567,6 +623,22 @@ describe("QmlDebugSession", () =>
         assert.deepStrictEqual(inspector.currentObjectIds, [ 41, 42 ]);
     });
 
+    it("returns decoded inspector object metadata for the active selection", async () =>
+    {
+        const { session, qmlDebugger, inspector } = createSession();
+        inspector.currentObjectIds = [ 41 ];
+
+        const response = session.callCustom("qml/inspector/objectTree");
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.deepStrictEqual(qmlDebugger.objectTreeCalls, [ [ 41 ] ]);
+        assert.deepStrictEqual(response.body.selectedObjectIds, [ 41 ]);
+        assert.strictEqual(response.body.objects[0].className, "QQuickRectangle");
+        assert.strictEqual(response.body.objects[0].properties[0].decodedValue, "red");
+        assert.deepStrictEqual(response.body.contexts, [ { debugId: 7, objectIds: [ 41 ] } ]);
+    });
+
     it("starts and stops profiler capture through custom requests", async () =>
     {
         const { session, profiler } = createSession();
@@ -586,6 +658,18 @@ describe("QmlDebugSession", () =>
 
         assert.strictEqual(stop.body.recording, false);
         assert.strictEqual(profiler.recording, false);
+    });
+
+    it("exports profiler data as a structured timeline snapshot", () =>
+    {
+        const { session } = createSession();
+
+        const response = session.callCustom("qml/profiler/export");
+
+        assert.strictEqual(response.success, true);
+        assert.strictEqual(response.body.summary.packetCount, 1);
+        assert.deepStrictEqual(response.body.eventKinds, [ { kind: "uint64", count: 1 } ]);
+        assert.strictEqual(response.body.timeline[0].decodedValue, 8);
     });
 
     it("normalizes physical and qrc source path mappings", () =>

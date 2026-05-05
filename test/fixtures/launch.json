@@ -11,5 +11,13 @@
     "paths": {
         "qrc:/qml": "${workspaceFolder}/test/fixtures/qml"
     },
+    "services": [
+        "DebugMessages",
+        "QmlDebugger",
+        "V8Debugger",
+        "QmlInspector",
+        "CanvasFrameRate",
+        "EngineControl"
+    ],
     "block": true
 }

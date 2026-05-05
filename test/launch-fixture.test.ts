@@ -65,6 +65,16 @@ class FixtureLifecycleService
 /** Declarative debug service mock for fixture launch. */
 class FixtureDeclarativeDebugClient extends FixtureLifecycleService
 {
+    public getCapabilities() : any
+    {
+        return { protocolVersion: 1, dataStreamVersion: 12, services: [] };
+    }
+
+    public isServiceAvailable() : boolean
+    {
+        return false;
+    }
+
     /** Record a successful handshake. */
     public async handshake() : Promise<void>
     {
@@ -148,6 +158,57 @@ class FixtureV8Debugger extends FixtureLifecycleService
     }
 }
 
+class FixtureInspector extends FixtureLifecycleService
+{
+    public getSnapshot() : any
+    {
+        return { enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0 };
+    }
+
+    public async setInspectToolEnabled() : Promise<any>
+    {
+        return this.getSnapshot();
+    }
+
+    public async setShowAppOnTop() : Promise<any>
+    {
+        return this.getSnapshot();
+    }
+
+    public async selectObjects() : Promise<any>
+    {
+        return this.getSnapshot();
+    }
+}
+
+class FixtureProfiler extends FixtureLifecycleService
+{
+    public getSnapshot() : any
+    {
+        return { recording: false, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] };
+    }
+
+    public exportSnapshot() : any
+    {
+        return { summary: this.getSnapshot(), eventKinds: [], timeline: [] };
+    }
+
+    public async startRecording() : Promise<any>
+    {
+        return this.getSnapshot();
+    }
+
+    public async stopRecording() : Promise<any>
+    {
+        return this.getSnapshot();
+    }
+
+    public clear() : any
+    {
+        return this.getSnapshot();
+    }
+}
+
 /** Testable session exposing launchRequest for the fixture integration test. */
 class FixtureSession extends QmlDebugSession
 {
@@ -205,6 +266,8 @@ describe("QML launch fixture", () =>
                 debugMessages: new FixtureLifecycleService(),
                 v8debugger: new FixtureV8Debugger(),
                 declarativeDebugClient: new FixtureDeclarativeDebugClient(),
+                inspector: new FixtureInspector(),
+                profiler: new FixtureProfiler(),
                 processLauncher: (options : any) : any =>
                 {
                     launched.push(options);
@@ -219,7 +282,7 @@ describe("QML launch fixture", () =>
         assert.strictEqual(packetManager.connectCount, 1);
         assert.strictEqual(launched[0].program.endsWith("test/fixtures/fake-qml-app"), true);
         assert.strictEqual(launched[0].args[0], "--fixture");
-        assert.strictEqual(launched[0].args[1], "-qmljsdebugger=host:127.0.0.1,port:23456,block,services:DebugMessages,QmlDebugger,V8Debugger,QmlInspector");
+        assert.strictEqual(launched[0].args[1], "-qmljsdebugger=host:127.0.0.1,port:23456,block,services:DebugMessages,QmlDebugger,V8Debugger,QmlInspector,CanvasFrameRate,EngineControl");
         assert.strictEqual(session.mapPathFrom("qrc:/qml/Main.qml").endsWith("test/fixtures/qml/Main.qml"), true);
     });
 });

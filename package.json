@@ -352,7 +352,9 @@
                                     "DebugMessages",
                                     "QmlDebugger",
                                     "V8Debugger",
-                                    "QmlInspector"
+                                    "QmlInspector",
+                                    "CanvasFrameRate",
+                                    "EngineControl"
                                 ]
                             },
                             "block": {
@@ -389,6 +391,26 @@
                         "paths": {},
                         "block": true,
                         "trace": false
+                    },
+                    {
+                        "type": "qml",
+                        "request": "launch",
+                        "name": "Launch QML with Inspector + Profiler",
+                        "program": "${workspaceFolder}/<your_qml_application>",
+                        "args": [],
+                        "host": "localhost",
+                        "port": 12150,
+                        "paths": {},
+                        "services": [
+                            "DebugMessages",
+                            "QmlDebugger",
+                            "V8Debugger",
+                            "QmlInspector",
+                            "CanvasFrameRate",
+                            "EngineControl"
+                        ],
+                        "block": true,
+                        "trace": false
                     }
                 ],
                 "configurationSnippets": [
@@ -422,8 +444,39 @@
                             },
                             "block": true
                         }
+                    },
+                    {
+                        "label": "QML Debug: Launch With Inspector + Profiler",
+                        "description": "Launch a Qt/QML application with QmlInspector, CanvasFrameRate, and EngineControl enabled.",
+                        "body": {
+                            "name": "QML Debug: Launch With Inspector + Profiler",
+                            "type": "qml",
+                            "request": "launch",
+                            "program": "^\"\\${workspaceFolder}/<your_qml_application>\"",
+                            "args": [],
+                            "host": "localhost",
+                            "port": 12150,
+                            "paths": {
+                                "qrc:/qml": "^\"\\${workspaceFolder}/qml\""
+                            },
+                            "services": [
+                                "DebugMessages",
+                                "QmlDebugger",
+                                "V8Debugger",
+                                "QmlInspector",
+                                "CanvasFrameRate",
+                                "EngineControl"
+                            ],
+                            "block": true
+                        }
                     }
                 ]
+            }
+        ],
+        "snippets": [
+            {
+                "language": "jsonc",
+                "path": "./snippets/qml-debug.code-snippets"
             }
         ]
     },
@@ -447,6 +500,7 @@
         "vscode:prepublish": "rimraf dist && npm run -S esbuild-base -- --minify",
         "test:compile": "tsc -p tsconfig.test.json",
         "test:unit": "npm run test:compile && mocha --require ./out-test/test/bootstrap.js \"out-test/test/**/*.test.js\"",
+        "test:qt-integration": "npm run test:compile && mocha --require ./out-test/test/bootstrap.js out-test/test/qt-integration.test.js",
         "test:coverage": "nyc --reporter=text --reporter=html npm run test:unit",
         "test": "npm run typecheck && npm run test:unit",
         "clean": "rm -rfv ./out/* ./dist/*",

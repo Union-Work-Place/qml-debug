@@ -1,0 +1,30 @@
+{
+  "QML Debug Launch With Inspector And Profiler": {
+    "scope": "jsonc",
+    "prefix": "qml-debug-launch-profiler",
+    "description": "Launch a QML application with inspector and profiler services enabled.",
+    "body": [
+      "{",
+      "  \"type\": \"qml\",",
+      "  \"request\": \"launch\",",
+      "  \"name\": \"QML Debug: Launch With Inspector + Profiler\",",
+      "  \"program\": \"${workspaceFolder}/app\",",
+      "  \"args\": [],",
+      "  \"host\": \"localhost\",",
+      "  \"port\": 12150,",
+      "  \"paths\": {",
+      "    \"qrc:/qml\": \"${workspaceFolder}/qml\"",
+      "  },",
+      "  \"services\": [",
+      "    \"DebugMessages\",",
+      "    \"QmlDebugger\",",
+      "    \"V8Debugger\",",
+      "    \"QmlInspector\",",
+      "    \"CanvasFrameRate\",",
+      "    \"EngineControl\"",
+      "  ],",
+      "  \"block\": true",
+      "}"
+    ]
+  }
+}

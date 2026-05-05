@@ -1,10 +1,10 @@
 import Log from "@qml-debug/log";
 import ServiceDebugMessages from "@qml-debug/service-debug-messages";
-import ServiceQmlDebugger, { QmlDebugObjectReference } from "@qml-debug/service-qml-debugger";
+import ServiceQmlDebugger, { QmlDebugObjectReference, QmlDebugObjectTreeSnapshot } from "@qml-debug/service-qml-debugger";
 import ServiceNativeDebugger from "@qml-debug/service-v8-debugger";
 import ServiceDeclarativeDebugClient, { NegotiatedQtDebugCapabilities } from "@qml-debug/service-declarative-debug-client";
 import ServiceQmlInspector, { QmlInspectorSnapshot } from "@qml-debug/service-qml-inspector";
-import ServiceQmlProfiler, { QmlProfilerSnapshot } from "@qml-debug/service-qml-profiler";
+import ServiceQmlProfiler, { QmlProfilerExport, QmlProfilerSnapshot } from "@qml-debug/service-qml-profiler";
 import { parseProfilerFeatureMask } from "@qml-debug/profiler-features";
 import PacketManager from "@qml-debug/packet-manager";
 import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/qml-messages";
@@ -102,6 +102,8 @@ interface QmlDebuggerService extends DebugLifecycleService
 {
     /** Query the objects declared at a source location. */
     requestObjectsForLocation(filename : string, lineNumber : number, columnNumber : number) : Promise<QmlDebugObjectReference[]>;
+    /** Return decoded object trees and context groupings for the requested runtime ids. */
+    requestObjectTreeSnapshot(objectIds : number[]) : Promise<QmlDebugObjectTreeSnapshot>;
 }
 
 /** Optional QmlInspector service surface exposed through custom DAP requests. */
@@ -122,6 +124,8 @@ interface ProfilerService extends DebugLifecycleService
 {
     /** Return the current profiler snapshot. */
     getSnapshot() : QmlProfilerSnapshot;
+    /** Return a structured export of captured profiler traffic. */
+    exportSnapshot() : QmlProfilerExport;
     /** Start recording profiler traffic with the requested feature mask. */
     startRecording(featureMask : bigint, flushInterval : number) : Promise<QmlProfilerSnapshot>;
     /** Stop profiler recording. */
@@ -524,6 +528,17 @@ export class QmlDebugSession extends LoggingDebugSession
             return;
         }
 
+        if (command === "qml/inspector/objectTree")
+        {
+            const requestedObjectIds = Array.isArray(args?.objectIds)
+                ? args.objectIds.filter((value : unknown) : value is number => { return typeof value === "number"; })
+                : this.inspector.getSnapshot().currentObjectIds;
+
+            response.body = await this.qmlDebugger.requestObjectTreeSnapshot(requestedObjectIds);
+            this.sendResponse(response);
+            return;
+        }
+
         if (command === "qml/profiler/status")
         {
             response.body = this.getProfilerStatusResponse();
@@ -557,6 +572,13 @@ export class QmlDebugSession extends LoggingDebugSession
         if (command === "qml/profiler/clear")
         {
             response.body = this.profiler.clear();
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/profiler/export")
+        {
+            response.body = this.profiler.exportSnapshot();
             this.sendResponse(response);
             return;
         }

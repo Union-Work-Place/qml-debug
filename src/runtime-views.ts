@@ -11,6 +11,19 @@ interface InspectorStatusResponse
     pendingRequestCount : number;
 }
 
+interface InspectorObjectTreeResponse
+{
+    selectedObjectIds : number[];
+    objects : {
+        debugId : number;
+        className : string;
+        idString : string;
+        name : string;
+        propertyCount : number;
+    }[];
+    contexts : { debugId : number; objectIds : number[] }[];
+}
+
 interface ProfilerStatusResponse
 {
     available : boolean;
@@ -21,7 +34,15 @@ interface ProfilerStatusResponse
     packetCount : number;
     receivedBytes : number;
     lastPacketTimestamp? : string;
-    recentPackets : { timestamp : string; size : number }[];
+    recentPackets : { timestamp : string; size : number; kind : string; hexPreview : string }[];
+    timelineEvents : { timestamp : string; size : number; kind : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
+}
+
+interface ProfilerExportResponse
+{
+    summary : ProfilerStatusResponse;
+    eventKinds : { kind : string; count : number }[];
+    timeline : { timestamp : string; size : number; kind : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
 }
 
 class RuntimeTreeItem extends vscode.TreeItem
@@ -100,6 +121,11 @@ class InspectorViewProvider implements vscode.TreeDataProvider<RuntimeTreeItem>
         if (status === undefined)
             return [ new RuntimeTreeItem("No active QML session") ];
 
+        const objectTree = status.currentObjectIds.length > 0
+            ? await requestQmlRuntime<InspectorObjectTreeResponse>("qml/inspector/objectTree", { objectIds: status.currentObjectIds })
+            : undefined;
+        const selectedObject = objectTree?.objects[0];
+
         return [
             new RuntimeTreeItem("Inspector service", status.available ? "available" : "unavailable"),
             new RuntimeTreeItem("Interactive selection", status.enabled ? "enabled" : "disabled",
@@ -108,6 +134,10 @@ class InspectorViewProvider implements vscode.TreeDataProvider<RuntimeTreeItem>
                 { command: "qml-debug.toggleInspectorAppOnTop", title: "Toggle App On Top" }),
             new RuntimeTreeItem("Selected object ids", status.currentObjectIds.length > 0 ? status.currentObjectIds.join(", ") : "none",
                 { command: "qml-debug.inspectCurrentQmlItem", title: "Inspect Current QML Item" }),
+            new RuntimeTreeItem("Selected object", selectedObject === undefined ? "none" : selectedObject.className + " #" + selectedObject.debugId),
+            new RuntimeTreeItem("Selected object id", selectedObject?.idString || selectedObject?.name || "none"),
+            new RuntimeTreeItem("Selected object properties", selectedObject === undefined ? "0" : String(selectedObject.propertyCount)),
+            new RuntimeTreeItem("Contexts in selection", objectTree === undefined ? "0" : String(objectTree.contexts.length)),
             new RuntimeTreeItem("Pending requests", String(status.pendingRequestCount))
         ];
     }
@@ -145,6 +175,8 @@ class ProfilerViewProvider implements vscode.TreeDataProvider<RuntimeTreeItem>
             new RuntimeTreeItem("Flush interval", status.flushInterval + " ms"),
             new RuntimeTreeItem("Packets received", String(status.packetCount)),
             new RuntimeTreeItem("Bytes received", String(status.receivedBytes)),
+            new RuntimeTreeItem("Timeline events", String(status.timelineEvents.length)),
+            new RuntimeTreeItem("Last event kind", status.timelineEvents.length > 0 ? status.timelineEvents[status.timelineEvents.length - 1].kind : "none"),
             new RuntimeTreeItem("Last packet", status.lastPacketTimestamp ?? "none"),
             new RuntimeTreeItem("Export snapshot", "open JSON",
                 { command: "qml-debug.exportProfilerSnapshot", title: "Export Profiler Snapshot" })
@@ -239,7 +271,7 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                const status = await requireQmlRuntime<ProfilerStatusResponse>("qml/profiler/status");
+                const status = await requireQmlRuntime<ProfilerExportResponse>("qml/profiler/export");
                 const document = await vscode.workspace.openTextDocument(
                     {
                         language: "json",

@@ -27,9 +27,14 @@
 - [x] Add scene graph/profiler collection as a separate DAP/custom-view feature set.
 - [x] Document supported Qt versions and service capability differences.
 
-## Post-Phase 4 Recommendations
+## Phase 5: Post-Phase 4 Follow-Up - Completed
 
-- Add a real Qt-backed integration suite that launches a fixture with `QmlInspector` and `CanvasFrameRate` enabled so Phase 4 stops relying only on mocked services.
-- Extend the profiler from packet snapshots to a typed event decoder and timeline export so scene graph and binding activity can be filtered without external tooling.
-- Add full `QmlDebugger` object-tree decoding with property payloads and context trees, which would allow the inspector view to show object metadata instead of only runtime ids.
-- Add launch configuration snippets or settings presets for `CanvasFrameRate,EngineControl,DebugMessages` so profiler capture can be enabled without hand-editing `services` arrays.
+- [x] Add a real Qt-backed integration suite harness that launches a fixture with `QmlInspector` and `CanvasFrameRate` enabled when a Qt fixture is available.
+- [x] Extend the profiler from packet snapshots to a typed event decoder and timeline export so traffic can be filtered by event kind without leaving VS Code.
+- [x] Add full `QmlDebugger` object-tree decoding with property payloads and context groupings so the inspector view can show object metadata instead of only runtime ids.
+- [x] Add launch configuration snippets and presets for `CanvasFrameRate,EngineControl,DebugMessages` so profiler capture can be enabled without hand-editing `services` arrays.
+
+## Follow-Up
+
+- Replace the current transport-level profiler event classifier with a semantic decoder for the Qt Creator timeline stream once more real fixture captures are available.
+- Expand the Qt-backed harness from launch smoke coverage to assertions over inspector selection, profiler export contents, and runtime teardown.
