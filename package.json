@@ -39,6 +39,16 @@
         "onCommand:qml-debug.disableFilterFunctions",
         "onCommand:qml-debug.enableSortMembers",
         "onCommand:qml-debug.disableSortMembers",
+        "onCommand:qml-debug.inspectCurrentQmlItem",
+        "onCommand:qml-debug.toggleInspector",
+        "onCommand:qml-debug.toggleInspectorAppOnTop",
+        "onCommand:qml-debug.startProfiler",
+        "onCommand:qml-debug.stopProfiler",
+        "onCommand:qml-debug.clearProfiler",
+        "onCommand:qml-debug.exportProfilerSnapshot",
+        "onCommand:qml-debug.refreshRuntimeTools",
+        "onView:qml-debug.inspector",
+        "onView:qml-debug.profiler",
         "onDebugResolve:qml"
     ],
     "contributes": {
@@ -78,6 +88,54 @@
                 "category": "QML Debug",
                 "title": "Enable Sort",
                 "icon": "$(sort-precedence)"
+            },
+            {
+                "command": "qml-debug.inspectCurrentQmlItem",
+                "category": "QML Debug",
+                "title": "Inspect Current QML Item",
+                "icon": "$(target)"
+            },
+            {
+                "command": "qml-debug.toggleInspector",
+                "category": "QML Debug",
+                "title": "Toggle Inspector Selection",
+                "icon": "$(selection)"
+            },
+            {
+                "command": "qml-debug.toggleInspectorAppOnTop",
+                "category": "QML Debug",
+                "title": "Toggle Inspector App On Top",
+                "icon": "$(window)"
+            },
+            {
+                "command": "qml-debug.startProfiler",
+                "category": "QML Debug",
+                "title": "Start QML Profiler Capture",
+                "icon": "$(play)"
+            },
+            {
+                "command": "qml-debug.stopProfiler",
+                "category": "QML Debug",
+                "title": "Stop QML Profiler Capture",
+                "icon": "$(debug-stop)"
+            },
+            {
+                "command": "qml-debug.clearProfiler",
+                "category": "QML Debug",
+                "title": "Clear QML Profiler Snapshot",
+                "icon": "$(clear-all)"
+            },
+            {
+                "command": "qml-debug.exportProfilerSnapshot",
+                "category": "QML Debug",
+                "title": "Export QML Profiler Snapshot",
+                "icon": "$(export)"
+            },
+            {
+                "command": "qml-debug.refreshRuntimeTools",
+                "category": "QML Debug",
+                "title": "Refresh Runtime Tools",
+                "icon": "$(refresh)"
             }
         ],
         "configuration": [
@@ -129,6 +187,62 @@
                     "command": "qml-debug.disableSortMembers",
                     "group": "options",
                     "when": "debugType == 'qml' && qmldebug.sortMembers"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "qml-debug.inspectCurrentQmlItem",
+                    "group": "navigation",
+                    "when": "view == qml-debug.inspector"
+                },
+                {
+                    "command": "qml-debug.toggleInspector",
+                    "group": "navigation",
+                    "when": "view == qml-debug.inspector"
+                },
+                {
+                    "command": "qml-debug.toggleInspectorAppOnTop",
+                    "group": "navigation",
+                    "when": "view == qml-debug.inspector"
+                },
+                {
+                    "command": "qml-debug.startProfiler",
+                    "group": "navigation",
+                    "when": "view == qml-debug.profiler"
+                },
+                {
+                    "command": "qml-debug.stopProfiler",
+                    "group": "navigation",
+                    "when": "view == qml-debug.profiler"
+                },
+                {
+                    "command": "qml-debug.clearProfiler",
+                    "group": "navigation",
+                    "when": "view == qml-debug.profiler"
+                },
+                {
+                    "command": "qml-debug.exportProfilerSnapshot",
+                    "group": "navigation",
+                    "when": "view == qml-debug.profiler"
+                },
+                {
+                    "command": "qml-debug.refreshRuntimeTools",
+                    "group": "navigation",
+                    "when": "view == qml-debug.inspector || view == qml-debug.profiler"
+                }
+            ]
+        },
+        "views": {
+            "debug": [
+                {
+                    "id": "qml-debug.inspector",
+                    "name": "QML Inspector",
+                    "when": "debugType == qml"
+                },
+                {
+                    "id": "qml-debug.profiler",
+                    "name": "QML Profiler",
+                    "when": "debugType == qml"
                 }
             ]
         },

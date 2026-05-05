@@ -4,6 +4,7 @@ require("source-map-support").install();
 
 import Log, { LogLevel } from "@qml-debug/log";
 import { QmlDebugAdapterFactory } from "@qml-debug/debug-adapter";
+import { registerRuntimeViews } from "@qml-debug/runtime-views";
 
 import * as vscode from "vscode";
 
@@ -19,6 +20,8 @@ export function activate(context: vscode.ExtensionContext) : void
         vscode.commands.executeCommand("setContext", "qmldebug.filterFunctions", configuration.get<boolean>("filterFunctions", true));
         vscode.commands.executeCommand("setContext", "qmldebug.sortMembers", configuration.get<boolean>("sortMembers", true));
     });
+
+    registerRuntimeViews(context);
 
     // Register Commands
     context.subscriptions.push(

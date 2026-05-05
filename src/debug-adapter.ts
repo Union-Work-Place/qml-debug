@@ -1,8 +1,11 @@
 import Log from "@qml-debug/log";
 import ServiceDebugMessages from "@qml-debug/service-debug-messages";
-import ServiceQmlDebugger  from "@qml-debug/service-qml-debugger";
+import ServiceQmlDebugger, { QmlDebugObjectReference } from "@qml-debug/service-qml-debugger";
 import ServiceNativeDebugger from "@qml-debug/service-v8-debugger";
-import ServiceDeclarativeDebugClient from "@qml-debug/service-declarative-debug-client";
+import ServiceDeclarativeDebugClient, { NegotiatedQtDebugCapabilities } from "@qml-debug/service-declarative-debug-client";
+import ServiceQmlInspector, { QmlInspectorSnapshot } from "@qml-debug/service-qml-inspector";
+import ServiceQmlProfiler, { QmlProfilerSnapshot } from "@qml-debug/service-qml-profiler";
+import { parseProfilerFeatureMask } from "@qml-debug/profiler-features";
 import PacketManager from "@qml-debug/packet-manager";
 import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/qml-messages";
 import { QmlFrame, QmlVariable } from "@qml-debug/qml-types";
@@ -88,6 +91,43 @@ interface DeclarativeDebugClientService extends DebugLifecycleService
 {
     /** Perform the Qt debug server handshake and service negotiation. */
     handshake() : Promise<void>;
+    /** Return the last negotiated Qt debug service list and protocol metadata. */
+    getCapabilities() : NegotiatedQtDebugCapabilities;
+    /** Return true when the negotiated service list contains the requested service. */
+    isServiceAvailable(name : string) : boolean;
+}
+
+/** Minimal QmlDebugger surface used for inspector source lookups. */
+interface QmlDebuggerService extends DebugLifecycleService
+{
+    /** Query the objects declared at a source location. */
+    requestObjectsForLocation(filename : string, lineNumber : number, columnNumber : number) : Promise<QmlDebugObjectReference[]>;
+}
+
+/** Optional QmlInspector service surface exposed through custom DAP requests. */
+interface InspectorService extends DebugLifecycleService
+{
+    /** Return the current inspector state. */
+    getSnapshot() : QmlInspectorSnapshot;
+    /** Enable or disable interactive selection in the target app. */
+    setInspectToolEnabled(enabled : boolean) : Promise<QmlInspectorSnapshot>;
+    /** Toggle Qt's app-on-top window flag while inspector tools are active. */
+    setShowAppOnTop(showAppOnTop : boolean) : Promise<QmlInspectorSnapshot>;
+    /** Select the provided runtime object ids in the Qt inspector. */
+    selectObjects(objectIds : number[]) : Promise<QmlInspectorSnapshot>;
+}
+
+/** Optional profiler capture surface used for Phase 4 control and collection. */
+interface ProfilerService extends DebugLifecycleService
+{
+    /** Return the current profiler snapshot. */
+    getSnapshot() : QmlProfilerSnapshot;
+    /** Start recording profiler traffic with the requested feature mask. */
+    startRecording(featureMask : bigint, flushInterval : number) : Promise<QmlProfilerSnapshot>;
+    /** Stop profiler recording. */
+    stopRecording() : Promise<QmlProfilerSnapshot>;
+    /** Clear accumulated profiler packets and counters. */
+    clear() : QmlProfilerSnapshot;
 }
 
 /** Minimal V8 debugger service surface used by the DAP adapter. */
@@ -125,13 +165,17 @@ interface QmlDebugSessionDependencies
     /** Packet transport between the adapter and the Qt debug server. */
     packetManager? : PacketManager;
     /** QmlDebugger service wrapper. */
-    qmlDebugger? : DebugLifecycleService;
+    qmlDebugger? : QmlDebuggerService;
     /** DebugMessages service wrapper. */
     debugMessages? : DebugLifecycleService;
     /** V8Debugger service wrapper. */
     v8debugger? : V8DebuggerService;
     /** QDeclarativeDebugClient service wrapper. */
     declarativeDebugClient? : DeclarativeDebugClientService;
+    /** QmlInspector service wrapper. */
+    inspector? : InspectorService;
+    /** CanvasFrameRate profiler service wrapper. */
+    profiler? : ProfilerService;
     /** Process launcher used by launch mode. */
     processLauncher? : ProcessLauncher;
 }
@@ -214,13 +258,17 @@ export class QmlDebugSession extends LoggingDebugSession
     /** Packet transport used by all Qt debug services. */
     private packetManager_ : PacketManager;
     /** QmlDebugger service wrapper. */
-    private qmlDebugger : DebugLifecycleService;
+    private qmlDebugger : QmlDebuggerService;
     /** DebugMessages service wrapper. */
     private debugMessages : DebugLifecycleService;
     /** V8Debugger service wrapper that powers QML/JS debugging. */
     private v8debugger : V8DebuggerService;
     /** Declarative debug client used for the initial Qt handshake. */
     private declarativeDebugClient : DeclarativeDebugClientService;
+    /** Optional QmlInspector service used by Phase 4 commands. */
+    private inspector : InspectorService;
+    /** Optional CanvasFrameRate profiler service used by Phase 4 commands. */
+    private profiler : ProfilerService;
 
     /** Whether the runtime is currently paused in QML/JS code. */
     private breaked = false;
@@ -336,6 +384,184 @@ export class QmlDebugSession extends LoggingDebugSession
     public mapHandleFrom(handle : number) : number
     {
         return handle + 1;
+    }
+
+    /** Build a stable snapshot of the negotiated Qt services and feature availability. */
+    public getQtCapabilitiesSnapshot() : {
+        protocolVersion : number;
+        dataStreamVersion : number;
+        services : { name : string; version : number; available : boolean }[];
+        inspectorAvailable : boolean;
+        profilerAvailable : boolean;
+    }
+    {
+        const capabilities = this.declarativeDebugClient.getCapabilities();
+
+        return {
+            protocolVersion: capabilities.protocolVersion,
+            dataStreamVersion: capabilities.dataStreamVersion,
+            services: capabilities.services.map((service) =>
+            {
+                return {
+                    name: service.name,
+                    version: service.version,
+                    available: true
+                };
+            }),
+            inspectorAvailable: this.declarativeDebugClient.isServiceAvailable("QmlInspector"),
+            profilerAvailable: this.declarativeDebugClient.isServiceAvailable("CanvasFrameRate")
+                || this.declarativeDebugClient.isServiceAvailable("EngineControl")
+        };
+    }
+
+    private requireQtService(response : DebugProtocol.Response, serviceName : string, errorNo : number) : boolean
+    {
+        if (this.declarativeDebugClient.isServiceAvailable(serviceName))
+            return true;
+
+        this.sendErrorResponse(response,
+            {
+                id: errorNo,
+                format: "QML Debug: Required Qt debug service '" + serviceName + "' is not available in the active session.",
+                showUser: true
+            }
+        );
+        return false;
+    }
+
+    private extractInspectorFilename(filename : string) : string
+    {
+        const normalized = this.mapPathTo(filename).replace(/\\/g, "/");
+        const lastSlash = normalized.lastIndexOf("/");
+        return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+    }
+
+    private getInspectorStatusResponse() : QmlInspectorSnapshot & { available : boolean }
+    {
+        return {
+            available: this.declarativeDebugClient.isServiceAvailable("QmlInspector"),
+            ...this.inspector.getSnapshot()
+        };
+    }
+
+    private getProfilerStatusResponse() : QmlProfilerSnapshot & { available : boolean }
+    {
+        return {
+            available: this.declarativeDebugClient.isServiceAvailable("CanvasFrameRate"),
+            ...this.profiler.getSnapshot()
+        };
+    }
+
+    private async handleCustomRequest(command : string, response : DebugProtocol.Response, args : any) : Promise<void>
+    {
+        if (command === "qml/getCapabilities")
+        {
+            response.body = this.getQtCapabilitiesSnapshot();
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/inspector/status")
+        {
+            response.body = this.getInspectorStatusResponse();
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/inspector/setEnabled")
+        {
+            if (!this.requireQtService(response, "QmlInspector", 1006))
+                return;
+
+            response.body = await this.inspector.setInspectToolEnabled(Boolean(args?.enabled));
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/inspector/setShowAppOnTop")
+        {
+            if (!this.requireQtService(response, "QmlInspector", 1006))
+                return;
+
+            response.body = await this.inspector.setShowAppOnTop(Boolean(args?.showAppOnTop));
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/inspector/selectObjects")
+        {
+            if (!this.requireQtService(response, "QmlInspector", 1006))
+                return;
+
+            const objectIds = Array.isArray(args?.objectIds)
+                ? args.objectIds.filter((value : unknown) : value is number => { return typeof value === "number"; })
+                : [];
+            response.body = await this.inspector.selectObjects(objectIds);
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/inspector/selectBySource")
+        {
+            if (!this.requireQtService(response, "QmlInspector", 1006))
+                return;
+
+            const filename = typeof args?.path === "string" ? args.path : "";
+            const lineNumber = typeof args?.line === "number" ? args.line : 1;
+            const columnNumber = typeof args?.column === "number" ? args.column : 1;
+            const matches = await this.qmlDebugger.requestObjectsForLocation(
+                this.extractInspectorFilename(filename),
+                lineNumber,
+                columnNumber
+            );
+            const objectIds = matches.map((value) : number => { return value.debugId; }).filter((value) : boolean => { return value >= 0; });
+            const snapshot = objectIds.length > 0 ? await this.inspector.selectObjects(objectIds) : this.inspector.getSnapshot();
+            response.body = {
+                matchedObjectIds: objectIds,
+                inspector: snapshot
+            };
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/profiler/status")
+        {
+            response.body = this.getProfilerStatusResponse();
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/profiler/start")
+        {
+            if (!this.requireQtService(response, "CanvasFrameRate", 1007))
+                return;
+
+            const flushInterval = typeof args?.flushInterval === "number" && Number.isFinite(args.flushInterval)
+                ? Math.max(1, Math.trunc(args.flushInterval))
+                : 250;
+            response.body = await this.profiler.startRecording(parseProfilerFeatureMask(args?.featureMask ?? args?.features), flushInterval);
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/profiler/stop")
+        {
+            if (!this.requireQtService(response, "CanvasFrameRate", 1007))
+                return;
+
+            response.body = await this.profiler.stopRecording();
+            this.sendResponse(response);
+            return;
+        }
+
+        if (command === "qml/profiler/clear")
+        {
+            response.body = this.profiler.clear();
+            this.sendResponse(response);
+            return;
+        }
+
+        super.customRequest(command, response, args);
     }
 
     /** Send a DAP error response and optionally terminate the debug session. */
@@ -518,6 +744,8 @@ export class QmlDebugSession extends LoggingDebugSession
             await this.qmlDebugger.initialize();
             await this.v8debugger.initialize();
             await this.declarativeDebugClient.initialize();
+            await this.inspector.initialize();
+            await this.profiler.initialize();
         }
         catch (error)
         {
@@ -603,6 +831,8 @@ export class QmlDebugSession extends LoggingDebugSession
             await this.v8debugger.requestContinue();
             await this.v8debugger.disconnect();
             await this.v8debugger.deinitialize();
+            await this.profiler.deinitialize();
+            await this.inspector.deinitialize();
             await this.qmlDebugger.deinitialize();
             await this.declarativeDebugClient.deinitialize();
             await this.packetManager.disconnect();
@@ -1209,6 +1439,20 @@ export class QmlDebugSession extends LoggingDebugSession
         }
     }
 
+    protected customRequest(command : string, response : DebugProtocol.Response, args : any, request?: DebugProtocol.Request) : void
+    {
+        void this.handleCustomRequest(command, response, args).catch((error) : void =>
+        {
+            this.sendErrorResponse(response,
+                {
+                    id: 1008,
+                    format: "QML Debug: Custom request '" + command + "' failed. " + error,
+                    showUser: true
+                }
+            );
+        });
+    }
+
     /** Create a DAP session, optionally using mocked Qt services for unit tests. */
     public constructor(session : vscode.DebugSession, dependencies : QmlDebugSessionDependencies = {})
     {
@@ -1219,6 +1463,8 @@ export class QmlDebugSession extends LoggingDebugSession
         this.debugMessages = dependencies.debugMessages ?? new ServiceDebugMessages(this);
         this.v8debugger = dependencies.v8debugger ?? new ServiceNativeDebugger(this);
         this.declarativeDebugClient = dependencies.declarativeDebugClient ?? new ServiceDeclarativeDebugClient(this);
+        this.inspector = dependencies.inspector ?? new ServiceQmlInspector(this);
+        this.profiler = dependencies.profiler ?? new ServiceQmlProfiler(this);
         this.processLauncher = dependencies.processLauncher ?? ((options : LaunchProcessOptions) : ChildProcess =>
         {
             return spawn(options.program, options.args,

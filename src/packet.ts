@@ -258,6 +258,21 @@ export default class Packet
         return JSON.parse(jsonString);
     }
 
+    /** Read a Qt byte array encoded as a big-endian byte length followed by raw bytes. */
+    public readByteArray() : Buffer
+    {
+        const len = this.data.readUInt32BE(this.readOffset);
+        this.readOffset += 4;
+
+        if (len === 0xFFFFFFFF)
+            return Buffer.alloc(0);
+
+        const value = this.data.slice(this.readOffset, this.readOffset + len);
+        this.readOffset += len;
+
+        return value;
+    }
+
     /** Read a UTF-16 JSON payload. */
     public readJsonUTF16() : any
     {
@@ -447,6 +462,21 @@ export default class Packet
             const jsonString = JSON.stringify(value);
             this.appendStringUTF8(jsonString);
         }
+    }
+
+    /** Append a Qt byte array with a big-endian byte length prefix. */
+    public appendByteArray(value : Buffer) : void
+    {
+        if (value.length === 0)
+        {
+            this.appendUInt32BE(0xFFFFFFFF);
+            return;
+        }
+
+        this.appendUInt32BE(value.length);
+        const offset = this.size;
+        this.expand(value.length);
+        value.copy(this.data, offset);
     }
 
     /** Append a value as UTF-16 JSON. */

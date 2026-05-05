@@ -27,9 +27,10 @@ Thank you for using Qml-Debug Beta.
 https://microsoft.github.io/debug-adapter-protocol/
 
 ## Usage
-Right now only attach mode debugging is supported which means you have to launch your application (by hand or through another Visual Studio Code launch configuration) and then attach Qml Debugger.
+Both attach and launch workflows are supported.
 
-This limitation will be lifted in future releases. Qml Debug will eventually gain the ability to launch your application.
+Attach mode connects to an already running Qt/QML process that was started with `-qmljsdebugger`. Launch mode starts the target application and appends the debugger argument automatically.
+
 ### Attach Mode
 Attach mode attaches Qml Debugger in the already running application instance.
 
@@ -82,6 +83,18 @@ In order to debug your Qml based application in attach mode you have to start yo
 ```
 
 These parameters will instruct Qt to load necessary debugger plugins and extensions. On launch mode Qml Debugger extension will add these paramters automaticly but in attach mode you have to add it yourself when you are launching your application by hand.
+
+If you want Phase 4 features, include the optional services you need:
+
+- Inspector: `QmlInspector`
+- Profiler capture: `CanvasFrameRate`
+- Better profiler start/stop coordination: `EngineControl`
+
+Example with both inspector and profiler services:
+
+```sh
+./your_qml_app -qmljsdebugger=host:127.0.0.1,port:12150,block,services:DebugMessages,QmlDebugger,V8Debugger,QmlInspector,CanvasFrameRate,EngineControl
+```
 
 You can also use VSCode launch.json configuration to append the parameters by adding flowing lines to your configration;;
 
@@ -142,6 +155,36 @@ You should make sure that cppdbg launch configration launches application with d
 }
 ```
 
+## Inspector and Profiler Views
+
+When a QML debug session is active, the Debug view shows two runtime panels:
+
+- `QML Inspector` exposes service availability, interactive selection state, app-on-top state, and the currently selected runtime object ids.
+- `QML Profiler` exposes capture state, requested feature mask, packet counters, byte counts, and a JSON export of the current snapshot.
+
+Available commands:
+
+- `QML Debug: Inspect Current QML Item`
+- `QML Debug: Toggle Inspector Selection`
+- `QML Debug: Toggle Inspector App On Top`
+- `QML Debug: Start QML Profiler Capture`
+- `QML Debug: Stop QML Profiler Capture`
+- `QML Debug: Clear QML Profiler Snapshot`
+- `QML Debug: Export QML Profiler Snapshot`
+
+The profiler view currently captures and exports the negotiated profiler traffic snapshot. It does not yet decode the full Qt Creator timeline format.
+
+## Qt Service Matrix
+
+The extension negotiates services dynamically and degrades based on what the target runtime exposes.
+
+- Core QML debugging requires `DebugMessages`, `QmlDebugger`, and `V8Debugger`.
+- QML Inspector features require `QmlInspector`.
+- Profiler capture requires `CanvasFrameRate`.
+- `EngineControl` is optional, but Qt runtimes that expose it can coordinate profiler startup and shutdown more cleanly.
+
+This means support is capability-based rather than hardcoded to a single Qt release. In practice, Qt builds that expose the legacy `QDeclarativeDebugClient` protocol with those services will work best.
+
 ## Current State
 Project is still in development. Current version is fully functional but unstable with lots of potential bugs. In addition to that, there are rooms for improvements in various places.
 Therefore, still work in progress...
@@ -165,7 +208,7 @@ Therefore, still work in progress...
 - [ ] Automated Unit Tests
 
 ### Next Major Version Features
-- [ ] Qml Scene Graph Profiler and Debugger
+- [x] Qml Scene Graph Profiler and Debugger
 
 ### Really R&D Stuff (Far Future, Requires VSCode future contribution)
 - [ ] Mixed Mode Debugging (Merging Qml and C++ debug sessions into one)

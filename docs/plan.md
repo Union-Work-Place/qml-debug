@@ -21,8 +21,15 @@
 - [x] Extend watch, hover, exception, and output behavior to match Qt Creator expectations.
 - [x] Add integration tests against a small QML fixture application.
 
-## Phase 4: Inspector and Profiler Work
+## Phase 4: Inspector and Profiler Work - Completed
 
-- Add QML Inspector support where the Qt debug service is available.
-- Add scene graph/profiler collection as a separate DAP/custom-view feature set.
-- Document supported Qt versions and service capability differences.
+- [x] Add QML Inspector support where the Qt debug service is available.
+- [x] Add scene graph/profiler collection as a separate DAP/custom-view feature set.
+- [x] Document supported Qt versions and service capability differences.
+
+## Post-Phase 4 Recommendations
+
+- Add a real Qt-backed integration suite that launches a fixture with `QmlInspector` and `CanvasFrameRate` enabled so Phase 4 stops relying only on mocked services.
+- Extend the profiler from packet snapshots to a typed event decoder and timeline export so scene graph and binding activity can be filtered without external tooling.
+- Add full `QmlDebugger` object-tree decoding with property payloads and context trees, which would allow the inspector view to show object metadata instead of only runtime ids.
+- Add launch configuration snippets or settings presets for `CanvasFrameRate,EngineControl,DebugMessages` so profiler capture can be enabled without hand-editing `services` arrays.

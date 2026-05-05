@@ -9,6 +9,21 @@ interface QmlEngine
     debugId : number;
 }
 
+export interface QmlDebugObjectReference
+{
+    debugId : number;
+    className : string;
+    idString : string;
+    name : string;
+    source : {
+        url : string;
+        lineNumber : number;
+        columnNumber : number;
+    };
+    contextDebugId : number;
+    children : QmlDebugObjectReference[];
+}
+
 interface ServiceAwaitingRequest
 {
     seqId : number;
@@ -44,6 +59,75 @@ export default class ServiceQmlDebugger
         }
 
         return engines;
+    }
+
+    private decodeObjectReference(packet : Packet, simple : boolean) : QmlDebugObjectReference
+    {
+        const object = {
+            debugId: packet.readInt32BE(),
+            className: "",
+            idString: "",
+            name: "",
+            source: {
+                url: "",
+                lineNumber: -1,
+                columnNumber: -1
+            },
+            contextDebugId: -1,
+            children: []
+        } as QmlDebugObjectReference;
+
+        object.source.url = packet.readByteArray().toString("latin1");
+        object.source.lineNumber = packet.readInt32BE();
+        object.source.columnNumber = packet.readInt32BE();
+        object.idString = packet.readStringUTF16();
+        object.name = packet.readStringUTF16();
+        object.className = packet.readStringUTF16();
+        object.debugId = packet.readInt32BE();
+        object.contextDebugId = packet.readInt32BE();
+        packet.readInt32BE();
+
+        if (simple)
+            return object;
+
+        const childCount = packet.readInt32BE();
+        const recurse = packet.readBoolean();
+        for (let index = 0; index < childCount; index++)
+            object.children.push(this.decodeObjectReference(packet, !recurse));
+
+        const propertyCount = packet.readInt32BE();
+        for (let index = 0; index < propertyCount; index++)
+        {
+            packet.readInt32BE();
+            packet.readStringUTF16();
+            packet.readByteArray();
+            packet.readStringUTF16();
+            packet.readStringUTF16();
+            packet.readBoolean();
+        }
+
+        return object;
+    }
+
+    public async requestObjectsForLocation(filename : string, lineNumber : number, columnNumber : number) : Promise<QmlDebugObjectReference[]>
+    {
+        Log.trace("QmlDebugger.requestObjectsForLocation", [ filename, lineNumber, columnNumber ]);
+
+        const request = new Packet();
+        request.appendStringUTF16(filename);
+        request.appendInt32BE(lineNumber);
+        request.appendInt32BE(columnNumber);
+        request.appendBoolean(false);
+        request.appendBoolean(false);
+
+        const packet = await this.makeRequest("FETCH_OBJECTS_FOR_LOCATION", request);
+        const count = packet.readInt32BE();
+        const objects : QmlDebugObjectReference[] = [];
+
+        for (let index = 0; index < count; index++)
+            objects.push(this.decodeObjectReference(packet, false));
+
+        return objects;
     }
 
     private packetReceived(packet : Packet)

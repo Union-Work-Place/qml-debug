@@ -56,11 +56,142 @@ class MockDeclarativeDebugClient extends MockLifecycleService
 {
     /** Number of handshake calls. */
     public handshakeCount = 0;
+    /** Negotiated Qt service capabilities surfaced to the adapter. */
+    public capabilities = {
+        protocolVersion: 1,
+        dataStreamVersion: 12,
+        services: [
+            { name: "DebugMessages", version: 1 },
+            { name: "QmlDebugger", version: 1 },
+            { name: "V8Debugger", version: 1 },
+            { name: "QmlInspector", version: 1 },
+            { name: "CanvasFrameRate", version: 1 },
+            { name: "EngineControl", version: 1 }
+        ]
+    };
 
     /** Record a declarative debug handshake. */
     public async handshake() : Promise<void>
     {
         this.handshakeCount++;
+    }
+
+    /** Return the mocked capability snapshot. */
+    public getCapabilities() : any
+    {
+        return this.capabilities;
+    }
+
+    /** Return true when the mocked service is present. */
+    public isServiceAvailable(name : string) : boolean
+    {
+        return this.capabilities.services.some((service : { name : string }) : boolean => { return service.name === name; });
+    }
+}
+
+/** Mock QmlDebugger service used for inspector source lookups. */
+class MockQmlDebugger extends MockLifecycleService
+{
+    /** Recorded source lookup requests. */
+    public objectLookupCalls : { filename : string; lineNumber : number; columnNumber : number }[] = [];
+
+    /** Return a deterministic object selection for tests. */
+    public async requestObjectsForLocation(filename : string, lineNumber : number, columnNumber : number) : Promise<any[]>
+    {
+        this.objectLookupCalls.push({ filename: filename, lineNumber: lineNumber, columnNumber: columnNumber });
+        return [ { debugId: 41 }, { debugId: 42 } ];
+    }
+}
+
+/** Mock inspector service used by custom request tests. */
+class MockInspector extends MockLifecycleService
+{
+    /** Captured enabled state. */
+    public enabled = false;
+    /** Captured app-on-top state. */
+    public showAppOnTop = false;
+    /** Last selected object ids. */
+    public currentObjectIds : number[] = [];
+
+    /** Return the current mock snapshot. */
+    public getSnapshot() : any
+    {
+        return {
+            enabled: this.enabled,
+            showAppOnTop: this.showAppOnTop,
+            currentObjectIds: [ ...this.currentObjectIds ],
+            pendingRequestCount: 0
+        };
+    }
+
+    /** Update enabled state. */
+    public async setInspectToolEnabled(enabled : boolean) : Promise<any>
+    {
+        this.enabled = enabled;
+        if (!enabled)
+            this.currentObjectIds = [];
+        return this.getSnapshot();
+    }
+
+    /** Update app-on-top state. */
+    public async setShowAppOnTop(showAppOnTop : boolean) : Promise<any>
+    {
+        this.showAppOnTop = showAppOnTop;
+        return this.getSnapshot();
+    }
+
+    /** Record selected object ids. */
+    public async selectObjects(objectIds : number[]) : Promise<any>
+    {
+        this.currentObjectIds = [ ...objectIds ];
+        return this.getSnapshot();
+    }
+}
+
+/** Mock profiler service used by custom request tests. */
+class MockProfiler extends MockLifecycleService
+{
+    /** Whether recording is active. */
+    public recording = false;
+    /** Requested feature mask. */
+    public requestedFeatureMask = "0";
+    /** Flush interval in ms. */
+    public flushInterval = 250;
+
+    /** Return the current snapshot. */
+    public getSnapshot() : any
+    {
+        return {
+            recording: this.recording,
+            requestedFeatureMask: this.requestedFeatureMask,
+            requestedFeatures: [],
+            flushInterval: this.flushInterval,
+            packetCount: 0,
+            receivedBytes: 0,
+            recentPackets: []
+        };
+    }
+
+    /** Start recording. */
+    public async startRecording(featureMask : bigint, flushInterval : number) : Promise<any>
+    {
+        this.recording = true;
+        this.requestedFeatureMask = featureMask.toString();
+        this.flushInterval = flushInterval;
+        return this.getSnapshot();
+    }
+
+    /** Stop recording. */
+    public async stopRecording() : Promise<any>
+    {
+        this.recording = false;
+        return this.getSnapshot();
+    }
+
+    /** Clear the snapshot. */
+    public clear() : any
+    {
+        return this.getSnapshot();
     }
 }
 
@@ -239,6 +370,14 @@ class TestQmlDebugSession extends QmlDebugSession
         this.responses.push(response);
     }
 
+    /** Invoke a custom DAP request. */
+    public callCustom(command : string, args : any = {}) : DebugProtocol.Response
+    {
+        const response = dapResponse(command);
+        this.customRequest(command, response, args);
+        return response;
+    }
+
     /** Invoke initializeRequest for tests. */
     public async callInitialize(args : DebugProtocol.InitializeRequestArguments) : Promise<DebugProtocol.InitializeResponse>
     {
@@ -345,20 +484,25 @@ class TestQmlDebugSession extends QmlDebugSession
 }
 
 /** Create a QML debug session with mocked service dependencies. */
-function createSession() : { session : TestQmlDebugSession; packetManager : MockPacketManager; v8 : MockV8Debugger; declarative : MockDeclarativeDebugClient; launched : any[]; child : MockChildProcess }
+function createSession() : { session : TestQmlDebugSession; packetManager : MockPacketManager; v8 : MockV8Debugger; declarative : MockDeclarativeDebugClient; qmlDebugger : MockQmlDebugger; inspector : MockInspector; profiler : MockProfiler; launched : any[]; child : MockChildProcess }
 {
     const packetManager = new MockPacketManager();
     const v8 = new MockV8Debugger();
     const declarative = new MockDeclarativeDebugClient();
+    const qmlDebugger = new MockQmlDebugger();
+    const inspector = new MockInspector();
+    const profiler = new MockProfiler();
     const launched : any[] = [];
     const child = new MockChildProcess();
     const session = new TestQmlDebugSession({} as any,
         {
             packetManager: packetManager,
-            qmlDebugger: new MockLifecycleService(),
+            qmlDebugger: qmlDebugger,
             debugMessages: new MockLifecycleService(),
             v8debugger: v8,
             declarativeDebugClient: declarative,
+            inspector: inspector,
+            profiler: profiler,
             processLauncher: (options : any) : any =>
             {
                 launched.push(options);
@@ -367,7 +511,17 @@ function createSession() : { session : TestQmlDebugSession; packetManager : Mock
         } as any
     );
 
-    return { session: session, packetManager: packetManager, v8: v8, declarative: declarative, launched: launched, child: child };
+    return {
+        session: session,
+        packetManager: packetManager,
+        v8: v8,
+        declarative: declarative,
+        qmlDebugger: qmlDebugger,
+        inspector: inspector,
+        profiler: profiler,
+        launched: launched,
+        child: child
+    };
 }
 
 describe("QmlDebugSession", () =>
@@ -383,6 +537,55 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(response.body!.supportsEvaluateForHovers, true);
         assert.strictEqual(response.body!.exceptionBreakpointFilters![0].filter, "all");
         assert.strictEqual(response.body!.exceptionBreakpointFilters![1].filter, "uncaught");
+    });
+
+    it("surfaces negotiated Qt services through a custom capabilities request", () =>
+    {
+        const { session } = createSession();
+
+        const response = session.callCustom("qml/getCapabilities");
+
+        assert.strictEqual(response.success, true);
+        assert.strictEqual(response.body.protocolVersion, 1);
+        assert.strictEqual(response.body.dataStreamVersion, 12);
+        assert.strictEqual(response.body.inspectorAvailable, true);
+        assert.strictEqual(response.body.profilerAvailable, true);
+        assert.strictEqual(response.body.services.some((service : any) => service.name === "QmlInspector"), true);
+    });
+
+    it("selects inspector objects by source location through QmlDebugger lookups", async () =>
+    {
+        const { session, qmlDebugger, inspector } = createSession();
+
+        const response = session.callCustom("qml/inspector/selectBySource", { path: "/project/qml/Main.qml", line: 12, column: 3 });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(qmlDebugger.objectLookupCalls.length, 1);
+        assert.deepStrictEqual(qmlDebugger.objectLookupCalls[0], { filename: "Main.qml", lineNumber: 12, columnNumber: 3 });
+        assert.deepStrictEqual(response.body.matchedObjectIds, [ 41, 42 ]);
+        assert.deepStrictEqual(inspector.currentObjectIds, [ 41, 42 ]);
+    });
+
+    it("starts and stops profiler capture through custom requests", async () =>
+    {
+        const { session, profiler } = createSession();
+
+        const start = session.callCustom("qml/profiler/start", { featureMask: "8", flushInterval: 50 });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(start.body.recording, true);
+        assert.strictEqual(start.body.requestedFeatureMask, "8");
+        assert.strictEqual(start.body.flushInterval, 50);
+        assert.strictEqual(profiler.recording, true);
+
+        const stop = session.callCustom("qml/profiler/stop");
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(stop.body.recording, false);
+        assert.strictEqual(profiler.recording, false);
     });
 
     it("normalizes physical and qrc source path mappings", () =>

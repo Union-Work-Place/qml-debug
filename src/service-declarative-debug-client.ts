@@ -5,11 +5,30 @@ import { QmlDebugSession } from "@qml-debug/debug-adapter";
 import { TerminatedEvent } from "@vscode/debugadapter";
 
 
+export interface NegotiatedQtDebugService
+{
+    name : string;
+    version : number;
+}
+
+export interface NegotiatedQtDebugCapabilities
+{
+    protocolVersion : number;
+    dataStreamVersion : number;
+    services : NegotiatedQtDebugService[];
+}
+
+
 export default class ServiceDeclarativeDebugClient
 {
     private session? : QmlDebugSession;
     private handshakeResolve : any;
     private handshakeResolveTimeout? : NodeJS.Timeout;
+    private capabilities : NegotiatedQtDebugCapabilities = {
+        protocolVersion: 0,
+        dataStreamVersion: 0,
+        services: []
+    };
 
     private packetReceived(packet: Packet): void
     {
@@ -24,6 +43,18 @@ export default class ServiceDeclarativeDebugClient
             const plugins = packet.readArray(Packet.prototype.readStringUTF16);
             const pluginVersions = packet.readArray(Packet.prototype.readDouble);
             const datastreamVersion = packet.readUInt32BE();
+
+            this.capabilities = {
+                protocolVersion: protocolVersion,
+                dataStreamVersion: datastreamVersion,
+                services: plugins.map<NegotiatedQtDebugService>((plugin, index) =>
+                {
+                    return {
+                        name: plugin,
+                        version: pluginVersions[index] ?? 0
+                    };
+                })
+            };
 
             Log.detail(
                 () =>
@@ -95,6 +126,26 @@ export default class ServiceDeclarativeDebugClient
         this.handshakeResolve();
     }
 
+    public getCapabilities() : NegotiatedQtDebugCapabilities
+    {
+        return {
+            protocolVersion: this.capabilities.protocolVersion,
+            dataStreamVersion: this.capabilities.dataStreamVersion,
+            services: this.capabilities.services.map<NegotiatedQtDebugService>((service) =>
+            {
+                return {
+                    name: service.name,
+                    version: service.version
+                };
+            })
+        };
+    }
+
+    public isServiceAvailable(name : string) : boolean
+    {
+        return this.capabilities.services.some((service) : boolean => { return service.name === name; });
+    }
+
     public async handshake() : Promise<void>
     {
         Log.trace("ServiceDeclarativeDebugClient.handshake", []);
@@ -133,11 +184,23 @@ export default class ServiceDeclarativeDebugClient
     {
         Log.trace("ServiceDeclarativeDebugClient.initialize", []);
 
+        this.capabilities = {
+            protocolVersion: 0,
+            dataStreamVersion: 0,
+            services: []
+        };
+
     }
 
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceDeclarativeDebugClient.deinitialize", []);
+
+        this.capabilities = {
+            protocolVersion: 0,
+            dataStreamVersion: 0,
+            services: []
+        };
 
     }
 
