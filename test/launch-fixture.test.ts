@@ -65,11 +65,13 @@ class FixtureLifecycleService
 /** Declarative debug service mock for fixture launch. */
 class FixtureDeclarativeDebugClient extends FixtureLifecycleService
 {
+    /** Return an empty capability set for fixture tests. */
     public getCapabilities() : any
     {
         return { protocolVersion: 1, dataStreamVersion: 12, services: [] };
     }
 
+    /** Report that optional services are unavailable in the fixture stub. */
     public isServiceAvailable() : boolean
     {
         return false;
@@ -158,51 +160,62 @@ class FixtureV8Debugger extends FixtureLifecycleService
     }
 }
 
+/** Inspector stub used by the launch fixture tests. */
 class FixtureInspector extends FixtureLifecycleService
 {
+    /** Return an inert inspector snapshot. */
     public getSnapshot() : any
     {
         return { enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0 };
     }
 
+    /** Ignore inspector enable requests. */
     public async setInspectToolEnabled() : Promise<any>
     {
         return this.getSnapshot();
     }
 
+    /** Ignore inspector app-on-top requests. */
     public async setShowAppOnTop() : Promise<any>
     {
         return this.getSnapshot();
     }
 
+    /** Ignore fixture inspector selection requests. */
     public async selectObjects() : Promise<any>
     {
         return this.getSnapshot();
     }
 }
 
+/** Profiler stub used by the launch fixture tests. */
 class FixtureProfiler extends FixtureLifecycleService
 {
+    /** Return an inert profiler snapshot. */
     public getSnapshot() : any
     {
         return { recording: false, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] };
     }
 
+    /** Return an empty profiler export. */
     public exportSnapshot() : any
     {
         return { summary: this.getSnapshot(), eventKinds: [], timeline: [] };
     }
 
+    /** Ignore profiler start requests. */
     public async startRecording() : Promise<any>
     {
         return this.getSnapshot();
     }
 
+    /** Ignore profiler stop requests. */
     public async stopRecording() : Promise<any>
     {
         return this.getSnapshot();
     }
 
+    /** Ignore profiler clear requests. */
     public clear() : any
     {
         return this.getSnapshot();

@@ -172,15 +172,45 @@ The extension now contributes a profiler-enabled launch preset and a JSON snippe
 - `Launch QML with Inspector + Profiler` appears in generated launch configurations.
 - `qml-debug-launch-profiler` inserts a launch.json snippet with `QmlInspector`, `CanvasFrameRate`, and `EngineControl` enabled.
 
+## Standalone Qt Fixture Project
+
+The repository now contains a small standalone Qt/QML fixture subproject in `test/qt-fixture`.
+
+It is intentionally separate from the extension build: the extension and unit tests do not compile it automatically, but the optional real-Qt harness can use it once you build it locally.
+
+Build it with CMake:
+
+```sh
+npm run fixture:configure
+npm run fixture:build
+```
+
+Or directly:
+
+```sh
+cmake -S test/qt-fixture -B test/qt-fixture/build
+cmake --build test/qt-fixture/build
+```
+
+The fixture covers the main debugging surfaces in one small app:
+
+- Launch and attach against a real Qt Quick window.
+- Source mapping for `qrc:/qml/Main.qml` and nested component files.
+- Breakpoints and stepping in QML bindings, signal handlers, and helper JavaScript.
+- Variables and evaluate on properties, functions, model data, and nested objects.
+- DebugMessages output through startup, timer, click, and signal-driven logs.
+- Inspector/object-tree coverage through named objects, nested delegates, and component boundaries.
+- Profiler/scene-graph traffic through timers, animation, repeater churn, and canvas repaints.
+
 ## Optional Qt-Backed Integration Harness
 
-An optional integration harness now exists in the test suite for real Qt fixtures. It is skipped unless these environment variables are set:
+An optional integration harness now exists in the test suite for real Qt fixtures. It first tries to use a bundled build from `test/qt-fixture/build`, and falls back to explicit environment variables when you want to point it at another executable:
 
 - `QML_DEBUG_QT_FIXTURE_PROGRAM`
 - `QML_DEBUG_QT_FIXTURE_CWD`
 - `QML_DEBUG_QT_FIXTURE_QML_PATH`
 
-Run it with `npm run test:qt-integration` after pointing those variables at a real Qt/QML fixture build.
+Run it with `npm run test:qt-integration` after building `test/qt-fixture` locally, or after pointing those variables at another real Qt/QML fixture build.
 
 ## Qt Service Matrix
 

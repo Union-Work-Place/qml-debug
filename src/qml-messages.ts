@@ -16,12 +16,16 @@ import
 // MESSAGE
 ///////////////////////////////////////////////////////////////////////
 
+/** Base message shape shared by all legacy V8 bridge packets. */
 export interface QmlMessage
 {
+    /** Packet kind emitted by the runtime. */
     type : "request" | "event" | "response";
+    /** Monotonic sequence id assigned by sender. */
     seq : number;
 }
 
+/** Check whether a value matches the common message envelope. */
 export function isQmlMessage(value : any) : value is QmlMessage
 {
     if (typeof value !== "object" ||
@@ -40,13 +44,18 @@ export function isQmlMessage(value : any) : value is QmlMessage
 // REQUEST
 ///////////////////////////////////////////////////////////////////////
 
+/** Generic legacy request envelope. */
 export interface QmlRequest<QmlArgumentsType> extends QmlMessage
 {
+    /** Request packet marker. */
     type : "request";
+    /** Command name understood by the runtime. */
     command : string;
+    /** Command-specific argument payload. */
     arguments : QmlArgumentsType;
 }
 
+/** Check whether a value matches the generic request envelope. */
 export function isQmlRequest(value : any) : value is QmlRequest<any>
 {
     if (!isQmlMessage(value) ||
@@ -65,18 +74,26 @@ export function isQmlRequest(value : any) : value is QmlRequest<any>
 // RESPONSE
 ///////////////////////////////////////////////////////////////////////
 
+/** Generic legacy response envelope. */
 export interface QmlResponse<QmlResponseBody> extends QmlMessage
 {
+    /** Response packet marker. */
     type : "response";
     /* eslint-disable */
+    /** Sequence id of the request being answered. */
     request_seq : number;
     /* eslint-enable */
+    /** Command name being answered. */
     command : string;
+    /** Whether the command succeeded. */
     success : boolean;
+    /** Whether the runtime is left running after the response. */
     running : boolean;
+    /** Command-specific response body. */
     body : QmlResponseBody;
 }
 
+/** Check whether a value matches the generic response envelope. */
 export function isQmlResponse(value : any) : value is QmlResponse<any>
 {
     if (!isQmlMessage(value as any) ||
@@ -98,13 +115,18 @@ export function isQmlResponse(value : any) : value is QmlResponse<any>
 // EVENT
 ///////////////////////////////////////////////////////////////////////
 
+/** Generic legacy event envelope. */
 export interface QmlEvent<QmlEventBody> extends QmlMessage
 {
+    /** Event packet marker. */
     type : "event";
+    /** Event name emitted by the runtime. */
     event : string;
+    /** Event-specific body payload. */
     body : QmlEventBody;
 }
 
+/** Check whether a value matches the generic event envelope. */
 export function isQmlEvent<QmlEventBody>(value : any) : value is QmlEvent<QmlEventBody>
 {
     if (!isQmlMessage(value as any) ||
@@ -123,8 +145,10 @@ export function isQmlEvent<QmlEventBody>(value : any) : value is QmlEvent<QmlEve
 // VERSION
 ///////////////////////////////////////////////////////////////////////
 
+/** Version request sent after the V8 debugger handshake. */
 export type QmlVersionRequest = QmlRequest<null>;
 
+/** Check whether a value matches the version request shape. */
 export function isQmlVersionRequest(value : any) : value is QmlVersionRequest
 {
     if (!isQmlRequest(value) ||
@@ -139,6 +163,7 @@ export function isQmlVersionRequest(value : any) : value is QmlVersionRequest
     return true;
 }
 
+/** Capability flags returned by the legacy V8 version command. */
 export interface QmlVersionBody
 {
     /* eslint-disable */
@@ -149,6 +174,7 @@ export interface QmlVersionBody
     /* eslint-enable */
 }
 
+/** Check whether a value matches the version response body. */
 export function isQmlVersionBody(value : any) : value is QmlVersionBody
 {
     if (typeof value !== "object" ||
@@ -164,11 +190,15 @@ export function isQmlVersionBody(value : any) : value is QmlVersionBody
 
     return true;
 }
+
+/** Version response envelope returned by the runtime. */
 export interface QmlVersionResponse extends QmlResponse<QmlVersionBody>
 {
+    /** Version command name. */
     command : "version";
 }
 
+/** Check whether a value matches the version response shape. */
 export function isQmlVersionResponse(value : any) : value is QmlVersionResponse
 {
     if (!isQmlResponse(value) ||
@@ -187,15 +217,22 @@ export function isQmlVersionResponse(value : any) : value is QmlVersionResponse
 // SET BREAKPOINT
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the legacy setbreakpoint command. */
 export interface QmlSetBreakpointArguments
 {
+    /** Breakpoint target type. */
     type : string;
+    /** Script identifier or regexp target. */
     target : string;
+    /** 0-based source line. */
     line : number;
+    /** Whether the breakpoint starts enabled. */
     enabled : boolean;
+    /** Ignore count requested by the client. */
     ignoreCount : number;
 }
 
+/** Check whether a value matches setbreakpoint arguments. */
 export function isQmlSetBreakpointArguments(value : any) : value is QmlSetBreakpointArguments
 {
     if (typeof value !== "object" ||
@@ -213,8 +250,10 @@ export function isQmlSetBreakpointArguments(value : any) : value is QmlSetBreakp
     return true;
 }
 
+/** Request envelope for the setbreakpoint command. */
 export type QmlSetBreakpointRequest = QmlRequest<QmlSetBreakpointArguments>;
 
+/** Check whether a value matches the setbreakpoint request shape. */
 export function isQmlSetBreakpointRequest(value : any) : value is QmlSetBreakpointRequest
 {
     if (!isQmlRequest(value) ||
@@ -229,11 +268,14 @@ export function isQmlSetBreakpointRequest(value : any) : value is QmlSetBreakpoi
     return true;
 }
 
+/** Response envelope returned by the setbreakpoint command. */
 export interface QmlSetBreakpointResponse extends QmlResponse<QmlBreakpoint>
 {
-    command : "breakpoint";
+    /** Command name echoed by the runtime. */
+    command : "setbreakpoint";
 }
 
+/** Check whether a value matches the setbreakpoint response shape. */
 export function isQmlSetBreakpointResponse(value : any) : value is QmlSetBreakpointResponse
 {
     if (!isQmlResponse(value) ||
@@ -252,11 +294,14 @@ export function isQmlSetBreakpointResponse(value : any) : value is QmlSetBreakpo
 // CLEAR BREAKPOINT
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the clearbreakpoint command. */
 export interface QmlClearBreakpointArguments
 {
+    /** Breakpoint id to remove. */
     breakpoint : number;
 }
 
+/** Check whether a value matches clearbreakpoint arguments. */
 export function isQmlCancelBreakpointArguments(value : any) : value is QmlClearBreakpointArguments
 {
     if (typeof value !== "object" ||
@@ -270,12 +315,18 @@ export function isQmlCancelBreakpointArguments(value : any) : value is QmlClearB
     return true;
 }
 
+/** Backward-compatible alias with a corrected name for clearbreakpoint arguments. */
+export const isQmlClearBreakpointArguments = isQmlCancelBreakpointArguments;
+
+/** Request envelope for the clearbreakpoint command. */
 export type QmlClearBreakpointRequest = QmlRequest<QmlClearBreakpointArguments>;
 
+/** Check whether a value matches the clearbreakpoint request shape. */
 export function isQmlClearBreakpointRequest(value : any) : value is QmlClearBreakpointRequest
 {
     if (!isQmlRequest(value) ||
-        value.command !== "clearbreakpoint")
+        value.command !== "clearbreakpoint" ||
+        !isQmlCancelBreakpointArguments(value.arguments))
     {
         /* eslint-disable */
         return false;
@@ -285,11 +336,14 @@ export function isQmlClearBreakpointRequest(value : any) : value is QmlClearBrea
     return true;
 }
 
+/** Response envelope returned by the clearbreakpoint command. */
 export interface QmlClearBreakpointResponse extends QmlResponse<undefined>
 {
+    /** Command name echoed by the runtime. */
     command : "clearbreakpoint";
 }
 
+/** Check whether a value matches the clearbreakpoint response shape. */
 export function isClearSetBreakpointResponse(value : any) : value is QmlClearBreakpointResponse
 {
     if (!isQmlResponse(value) ||
@@ -303,16 +357,23 @@ export function isClearSetBreakpointResponse(value : any) : value is QmlClearBre
     return true;
 }
 
+/** Backward-compatible alias with a corrected name for clearbreakpoint responses. */
+export const isQmlClearBreakpointResponse = isClearSetBreakpointResponse;
+
 
 // SET EXCEPTION BREAK
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the setexceptionbreak command. */
 export interface QmlSetExceptionBreakArguments
 {
+    /** Exception break mode. */
     type : string;
+    /** Whether the mode is enabled. */
     enabled : boolean;
 }
 
+/** Check whether a value matches setexceptionbreak arguments. */
 export function isQmlSetExceptionBreakArguments(value : any) : value is QmlSetExceptionBreakArguments
 {
     if (typeof value !== "object" ||
@@ -327,8 +388,10 @@ export function isQmlSetExceptionBreakArguments(value : any) : value is QmlSetEx
     return true;
 }
 
+/** Request envelope for the setexceptionbreak command. */
 export type QmlSetExceptionBreakRequest = QmlRequest<QmlSetExceptionBreakArguments>;
 
+/** Check whether a value matches the setexceptionbreak request shape. */
 export function isQmlSetExceptionBreakRequest(value : any) : value is QmlSetExceptionBreakRequest
 {
     if (!isQmlRequest(value) ||
@@ -343,11 +406,14 @@ export function isQmlSetExceptionBreakRequest(value : any) : value is QmlSetExce
     return true;
 }
 
+/** Response envelope returned by the setexceptionbreak command. */
 export interface QmlSetExceptionBreakResponse extends QmlResponse<QmlSetExceptionBreakArguments>
 {
+    /** Command name echoed by the runtime. */
     command : "setexceptionbreak";
 }
 
+/** Check whether a value matches the setexceptionbreak response shape. */
 export function isQmlSetExceptionBreakResponse(value : any) : value is QmlSetExceptionBreakResponse
 {
     if (!isQmlResponse(value) ||
@@ -366,17 +432,24 @@ export function isQmlSetExceptionBreakResponse(value : any) : value is QmlSetExc
 // BREAK
 ///////////////////////////////////////////////////////////////////////
 
+/** Body payload for a break event emitted by the runtime. */
 export interface QmlBreakEventBody
 {
+    /** Breakpoint ids that triggered the pause. */
     breakpoints : number[];
+    /** Invocation or binding text shown by the runtime. */
     invocationText : string;
+    /** Script metadata attached to the event. */
     script:
     {
+        /** Script name or URL. */
         name : string;
     };
+    /** 0-based source line that triggered the event. */
     sourceLine : number;
 }
 
+/** Check whether a value matches the break-event body shape. */
 export function isQmlBreakEventBody(value : any) : value is QmlBreakEventBody
 {
     if (typeof value !== "object" ||
@@ -399,11 +472,15 @@ export function isQmlBreakEventBody(value : any) : value is QmlBreakEventBody
 
     return true;
 }
+
+/** Break event envelope emitted by the runtime. */
 export interface QmlBreakEvent extends QmlEvent<QmlBreakEventBody>
 {
-    command : "breakpoint";
+    /** Event name emitted by the runtime. */
+    event : "break";
 }
 
+/** Check whether a value matches the break event shape. */
 export function isQmlBreakEvent(value : any) : value is QmlBreakEvent
 {
     if (!isQmlEvent(value) ||
@@ -422,12 +499,16 @@ export function isQmlBreakEvent(value : any) : value is QmlBreakEvent
 // CONTINUE
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the continue command. */
 export interface QmlContinueRequestArguments
 {
+    /** Optional step action requested by the client. */
     stepaction? : "in" | "out" | "next";
+    /** Optional step count. */
     stepcount? : 1 | undefined;
 }
 
+/** Check whether a value matches continue arguments. */
 export function isQmlContinueRequestArguments(value : any) : value is QmlContinueRequestArguments
 {
     if (typeof value !== "object" ||
@@ -442,8 +523,10 @@ export function isQmlContinueRequestArguments(value : any) : value is QmlContinu
     return true;
 }
 
+/** Request envelope for the continue command. */
 export type QmlContinueRequest = QmlRequest<QmlContinueRequestArguments>;
 
+/** Check whether a value matches the continue request shape. */
 export function isQmlContinueRequest(value : any) : value is QmlContinueRequest
 {
     if (!isQmlRequest(value) ||
@@ -458,11 +541,14 @@ export function isQmlContinueRequest(value : any) : value is QmlContinueRequest
     return true;
 }
 
+/** Response envelope returned by the continue command. */
 export interface QmlContinueResponse extends QmlResponse<undefined>
 {
+    /** Command name echoed by the runtime. */
     command : "continue";
 }
 
+/** Check whether a value matches the continue response shape. */
 export function isQmlContinueResponse(value : any) : value is QmlContinueResponse
 {
     if (!isQmlResponse(value) ||
@@ -480,11 +566,13 @@ export function isQmlContinueResponse(value : any) : value is QmlContinueRespons
 // BACKTRACE
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the backtrace command. */
 export interface QmlBacktraceArguments
 {
 
 }
 
+/** Check whether a value matches backtrace arguments. */
 export function isQmlBacktraceArguments(value : any) : value is QmlBacktraceArguments
 {
     if (typeof value !== "object")
@@ -493,8 +581,10 @@ export function isQmlBacktraceArguments(value : any) : value is QmlBacktraceArgu
     return true;
 }
 
+/** Request envelope for the backtrace command. */
 export type QmlBacktraceRequest = QmlRequest<QmlBacktraceArguments>;
 
+/** Check whether a value matches the backtrace request shape. */
 export function isQmlBacktraceRequest(value : any) : value is QmlBacktraceRequest
 {
     if (!isQmlRequest(value) ||
@@ -509,11 +599,14 @@ export function isQmlBacktraceRequest(value : any) : value is QmlBacktraceReques
     return true;
 }
 
+/** Response envelope returned by the backtrace command. */
 export interface QmlBacktraceResponse extends QmlResponse<QmlBacktrace>
 {
+    /** Command name echoed by the runtime. */
     command : "backtrace";
 }
 
+/** Check whether a value matches the backtrace response shape. */
 export function isQmlBacktraceResponse(value : any) : value is QmlBacktraceResponse
 {
     if (!isQmlResponse(value) ||
@@ -532,11 +625,14 @@ export function isQmlBacktraceResponse(value : any) : value is QmlBacktraceRespo
 // FRAME
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the frame command. */
 export interface QmlFrameRequestArguments
 {
+    /** Frame index to materialize. */
     number: number;
 }
 
+/** Check whether a value matches frame arguments. */
 export function isQmlFrameRequestArguments(value : any) : value is QmlFrameRequestArguments
 {
     if (typeof value !== "object" ||
@@ -549,11 +645,14 @@ export function isQmlFrameRequestArguments(value : any) : value is QmlFrameReque
 
     return true;
 }
+/** Request envelope for the frame command. */
 export type QmlFrameRequest = QmlRequest<QmlFrameRequestArguments>;
 
+/** Check whether a value matches the frame request shape. */
 export function isQmlFrameRequest(value : any) : value is QmlFrameRequest
 {
     if (!isQmlRequest(value) ||
+        value.command !== "frame" ||
         !isQmlFrameRequestArguments(value.arguments))
     {
         /* eslint-disable */
@@ -564,11 +663,14 @@ export function isQmlFrameRequest(value : any) : value is QmlFrameRequest
     return true;
 }
 
+/** Response envelope returned by the frame command. */
 export type QmlFrameResponse = QmlResponse<QmlFrame>;
 
+/** Check whether a value matches the frame response shape. */
 export function isQmlFrameResponse(value : any) : value is QmlFrameResponse
 {
     if (!isQmlResponse(value) ||
+        value.command !== "frame" ||
         !isQmlFrame((value as any).body))
     {
         /* eslint-disable */
@@ -583,11 +685,14 @@ export function isQmlFrameResponse(value : any) : value is QmlFrameResponse
 // SCOPE
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the scope command. */
 export interface QmlScopeRequestArguments
 {
+    /** Scope index to materialize. */
     number : number;
 }
 
+/** Check whether a value matches scope arguments. */
 export function isQmlScopeRequestArgument(value : any) : value is QmlScopeRequestArguments
 {
     if (typeof value !== "object" ||
@@ -601,12 +706,15 @@ export function isQmlScopeRequestArgument(value : any) : value is QmlScopeReques
     return true;
 }
 
+/** Request envelope for the scope command. */
 export type QmlScopeRequest = QmlRequest<QmlScopeRequestArguments>;
 
+/** Check whether a value matches the scope request shape. */
 export function isQmlScopeRequest(value : any) : value is QmlScopeRequest
 {
     if (!isQmlRequest(value) ||
-        !isQmlFrameRequestArguments(value.arguments))
+        value.command !== "scope" ||
+        !isQmlScopeRequestArgument(value.arguments))
     {
         /* eslint-disable */
         return false;
@@ -616,11 +724,14 @@ export function isQmlScopeRequest(value : any) : value is QmlScopeRequest
     return true;
 }
 
+/** Response envelope returned by the scope command. */
 export type QmlScopeResponse = QmlResponse<QmlScope>;
 
-export function isQmlScopeResponse(value : any) : value is QmlScopeRequest
+/** Check whether a value matches the scope response shape. */
+export function isQmlScopeResponse(value : any) : value is QmlScopeResponse
 {
     if (!isQmlResponse(value) ||
+        value.command !== "scope" ||
         !isQmlScope(value.body))
     {
         /* eslint-disable */
@@ -635,11 +746,14 @@ export function isQmlScopeResponse(value : any) : value is QmlScopeRequest
 // Lookup
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the lookup command. */
 export interface QmlLookupRequestArguments
 {
+    /** Runtime handles to materialize. */
     handles : number[];
 }
 
+/** Check whether a value matches lookup arguments. */
 export function isQmlLookupRequestArgument(value : any) : value is QmlLookupRequestArguments
 {
     if (typeof value !== "object")
@@ -661,8 +775,10 @@ export function isQmlLookupRequestArgument(value : any) : value is QmlLookupRequ
     return true;
 }
 
+/** Request envelope for the lookup command. */
 export type QmlLookupRequest = QmlRequest<QmlLookupRequestArguments>;
 
+/** Check whether a value matches the lookup request shape. */
 export function isQmlLookupRequest(value : any) : value is QmlLookupRequest
 {
     if (!isQmlRequest(value) ||
@@ -677,14 +793,17 @@ export function isQmlLookupRequest(value : any) : value is QmlLookupRequest
     return true;
 }
 
+/** Body payload returned by the lookup command. */
 export interface QmlLookupBody
 {
     [ index: string ] : QmlVariable;
 }
 
 
+/** Response envelope returned by the lookup command. */
 export type QmlLookupResponse = QmlResponse<QmlLookupBody>;
 
+/** Check whether a value matches the lookup response shape. */
 export function isQmlLookupResponse(value : any) : value is QmlLookupResponse
 {
     if (!isQmlResponse(value as any) ||
@@ -713,12 +832,16 @@ export function isQmlLookupResponse(value : any) : value is QmlLookupResponse
 // EVALUATE
 ///////////////////////////////////////////////////////////////////////
 
+/** Arguments for the evaluate command. */
 export interface QmlEvalutaRequestArguments
 {
+    /** Frame id used as evaluation context. */
     frame : number;
+    /** Expression text to evaluate. */
     expression : string;
 }
 
+/** Check whether a value matches evaluate arguments. */
 export function isQmlEvalutaRequestArguments(value : any) : value is QmlEvalutaRequestArguments
 {
     if (typeof value !== "object" ||
@@ -733,8 +856,16 @@ export function isQmlEvalutaRequestArguments(value : any) : value is QmlEvalutaR
     return true;
 }
 
+/** Backward-compatible alias with a corrected request-argument name. */
+export type QmlEvaluateRequestArguments = QmlEvalutaRequestArguments;
+
+/** Request envelope for the evaluate command. */
 export type QmlEvalutaRequest = QmlRequest<QmlEvalutaRequestArguments>;
 
+/** Backward-compatible alias with a corrected request type name. */
+export type QmlEvaluateRequest = QmlEvalutaRequest;
+
+/** Check whether a value matches the evaluate request shape. */
 export function isQmlEvalutaRequest(value : any) : value is QmlEvalutaRequest
 {
     if (!isQmlRequest(value) ||
@@ -749,9 +880,14 @@ export function isQmlEvalutaRequest(value : any) : value is QmlEvalutaRequest
     return true;
 }
 
+/** Backward-compatible alias with a corrected request-guard name. */
+export const isQmlEvaluateRequest = isQmlEvalutaRequest;
+
+/** Response envelope returned by the evaluate command. */
 export type QmlEvaluateResponse = QmlResponse<QmlVariable>;
 
-export function isQmlEvaluateResponse(value : any) : value is QmlLookupResponse
+/** Check whether a value matches the evaluate response shape. */
+export function isQmlEvaluateResponse(value : any) : value is QmlEvaluateResponse
 {
     if (!isQmlResponse(value) ||
         value.command !== "evaluate" ||

@@ -5,31 +5,44 @@ import { QmlDebugSession } from "@qml-debug/debug-adapter";
 import { TerminatedEvent } from "@vscode/debugadapter";
 
 
+/** One Qt debug service announced during the declarative handshake. */
 export interface NegotiatedQtDebugService
 {
+    /** Service name, for example `QmlDebugger` or `V8Debugger`. */
     name : string;
+    /** Service version reported by the Qt runtime. */
     version : number;
 }
 
+/** Snapshot of the declarative handshake capabilities negotiated with Qt. */
 export interface NegotiatedQtDebugCapabilities
 {
+    /** Protocol version reported by the server. */
     protocolVersion : number;
+    /** QDataStream version reported by the server. */
     dataStreamVersion : number;
+    /** Services announced by the runtime. */
     services : NegotiatedQtDebugService[];
 }
 
 
+/** Service wrapper responsible for the initial Qt declarative handshake. */
 export default class ServiceDeclarativeDebugClient
 {
+    /** Owning debug session used for transport access. */
     private session? : QmlDebugSession;
+    /** Promise resolver for the active handshake, if any. */
     private handshakeResolve : any;
+    /** Timeout guard for the active handshake. */
     private handshakeResolveTimeout? : NodeJS.Timeout;
+    /** Last negotiated capability snapshot. */
     private capabilities : NegotiatedQtDebugCapabilities = {
         protocolVersion: 0,
         dataStreamVersion: 0,
         services: []
     };
 
+    /** Decode the declarative handshake response and update local capabilities. */
     private packetReceived(packet: Packet): void
     {
         Log.trace("ServiceDeclarativeDebugClient.packetReceived", []);
@@ -126,6 +139,7 @@ export default class ServiceDeclarativeDebugClient
         this.handshakeResolve();
     }
 
+    /** Return a defensive copy of the last negotiated capability snapshot. */
     public getCapabilities() : NegotiatedQtDebugCapabilities
     {
         return {
@@ -141,11 +155,13 @@ export default class ServiceDeclarativeDebugClient
         };
     }
 
+    /** Return true when the negotiated service list contains the requested name. */
     public isServiceAvailable(name : string) : boolean
     {
         return this.capabilities.services.some((service) : boolean => { return service.name === name; });
     }
 
+    /** Perform the declarative debug handshake with the Qt runtime. */
     public async handshake() : Promise<void>
     {
         Log.trace("ServiceDeclarativeDebugClient.handshake", []);
@@ -180,6 +196,7 @@ export default class ServiceDeclarativeDebugClient
         });
     }
 
+    /** Reset capability state before a connection starts. */
     public async initialize(): Promise<void>
     {
         Log.trace("ServiceDeclarativeDebugClient.initialize", []);
@@ -192,6 +209,7 @@ export default class ServiceDeclarativeDebugClient
 
     }
 
+    /** Clear capability state after a connection ends. */
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceDeclarativeDebugClient.deinitialize", []);
@@ -204,6 +222,7 @@ export default class ServiceDeclarativeDebugClient
 
     }
 
+    /** Register the declarative debug packet handler on the shared transport. */
     public constructor(session : QmlDebugSession)
     {
         Log.trace("ServiceDeclarativeDebugClient.constructor", [ session ]);

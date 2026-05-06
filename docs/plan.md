@@ -1,11 +1,11 @@
 # Implementation Plan
 
-## Phase 1: Stabilize the Existing Bridge
+## Phase 1: Stabilize the Existing Bridge - Completed
 
-- Add unit-test infrastructure and coverage commands.
-- Cover `Packet`, `PacketManager`, QML type guards, and service request envelopes.
-- Fix packet primitive bugs, packet framing bugs, and DAP requests that currently do not respond.
-- Make initialize capabilities truthful and add `configurationDone` support.
+- [x] Add unit-test infrastructure and coverage commands.
+- [x] Cover `Packet`, `PacketManager`, QML type guards, and service request envelopes.
+- [x] Fix packet primitive bugs, packet framing bugs, and DAP requests that currently do not respond.
+- [x] Make initialize capabilities truthful and add `configurationDone` support.
 
 ## Phase 2: DAP Adapter Hardening - Completed
 
@@ -39,6 +39,18 @@
 - [x] Harden inspector custom requests so source lookup and object-tree expansion fail fast when required Qt services are missing.
 - [x] Make runtime views and the optional Qt-backed integration harness resilient to request failures and teardown edge cases.
 - [x] Add API descriptions for the new inspector, profiler, runtime-view, and harness surfaces introduced in the recent phases.
+
+## Phase 7: Repository-Wide API Review and Documentation - Completed
+
+- [x] Review the full repository for protocol guard mistakes, lifecycle gaps, and legacy helper issues outside the recent Phase 4/5 files.
+- [x] Fix confirmed protocol/type-guard defects in the legacy V8 message helpers and related runtime cleanup paths.
+- [x] Add API descriptions across the remaining source and test helper files so the whole repository uses a consistent documented surface.
+
+## Phase 8: Standalone Qt Fixture Project - Completed
+
+- [x] Add a small standalone Qt/QML fixture subproject that can be built separately from the extension but kept in-repo for test use.
+- [x] Encode the primary debugging cases in that fixture: launch, source mapping, breakpoints, evaluate, output, inspector selection, and profiler activity.
+- [x] Teach the optional Qt integration harness to auto-discover a local build of the fixture and run smoke/assertion coverage against it.
 
 ## Follow-Up
 

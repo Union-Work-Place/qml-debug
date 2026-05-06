@@ -2,6 +2,7 @@ import assert = require("assert");
 import PacketManager from "@qml-debug/packet-manager";
 import Packet from "@qml-debug/packet";
 
+/** Build one framed packet as it appears on the Qt debug transport. */
 function makeFrame(header : string, payload? : Packet) : Buffer
 {
     const packet = new Packet();

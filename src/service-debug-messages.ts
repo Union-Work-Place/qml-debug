@@ -6,8 +6,10 @@ import { QmlDebugSession } from "@qml-debug/debug-adapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 
 
+/** Service wrapper for the optional Qt DebugMessages stream. */
 export default class ServiceDebugMessages
 {
+    /** Owning debug session used to emit DAP output events. */
     private session? : QmlDebugSession;
 
     /** Convert a Qt message type id into a display label and DAP output category. */
@@ -35,6 +37,7 @@ export default class ServiceDebugMessages
         }
     }
 
+    /** Decode one DebugMessages packet and forward it as a DAP OutputEvent. */
     protected packetReceived(packet: Packet): void
     {
         Log.trace("ServiceDebugMessages.packetReceived", [ packet ]);
@@ -74,6 +77,7 @@ export default class ServiceDebugMessages
         this.session?.sendEvent(outputEvent);
     }
 
+    /** Open a grouped output section when DebugMessages becomes active. */
     public async initialize() : Promise<void>
     {
         Log.trace("ServiceDebugMessages.initialize", []);
@@ -83,6 +87,7 @@ export default class ServiceDebugMessages
         this.session?.sendEvent(outputGroupEvent);
     }
 
+    /** Close the grouped output section when DebugMessages shuts down. */
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceDebugMessages.deinitialize", []);
@@ -92,6 +97,7 @@ export default class ServiceDebugMessages
         this.session?.sendEvent(outputGroupEvent);
     }
 
+    /** Register the DebugMessages packet handler on the shared transport. */
     public constructor(session : QmlDebugSession)
     {
         Log.trace("ServiceDebugMessages.constructor", [ session ]);

@@ -8,18 +8,25 @@ import { registerRuntimeViews } from "@qml-debug/runtime-views";
 
 import * as vscode from "vscode";
 
+/** Activate the extension and register commands, runtime views, and adapter factories. */
 export function activate(context: vscode.ExtensionContext) : void
 {
     Log.trace("extension.activate", [ context ]);
 
     Log.instance().level = LogLevel.Debug;
 
-    vscode.workspace.onDidChangeConfiguration(() =>
+    const updateConfigurationContexts = () : void =>
     {
         const configuration = vscode.workspace.getConfiguration("qml-debug");
-        vscode.commands.executeCommand("setContext", "qmldebug.filterFunctions", configuration.get<boolean>("filterFunctions", true));
-        vscode.commands.executeCommand("setContext", "qmldebug.sortMembers", configuration.get<boolean>("sortMembers", true));
-    });
+        void vscode.commands.executeCommand("setContext", "qmldebug.filterFunctions", configuration.get<boolean>("filterFunctions", true));
+        void vscode.commands.executeCommand("setContext", "qmldebug.sortMembers", configuration.get<boolean>("sortMembers", true));
+    };
+
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(() =>
+    {
+        updateConfigurationContexts();
+    }));
+    updateConfigurationContexts();
 
     registerRuntimeViews(context);
 
@@ -70,6 +77,7 @@ export function activate(context: vscode.ExtensionContext) : void
     );
 }
 
+/** Deactivate the extension. */
 export function deactivate() : void
 {
     Log.trace("extension.deactivate", []);

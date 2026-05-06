@@ -1,6 +1,6 @@
 import assert = require("assert");
 import { isQmlBacktrace, isQmlVariable } from "@qml-debug/qml-types";
-import { isQmlBreakEvent, isQmlEvaluateResponse, isQmlLookupRequest } from "@qml-debug/qml-messages";
+import { isQmlBreakEvent, isQmlEvaluateResponse, isQmlLookupRequest, isQmlScopeRequest, isQmlScopeResponse } from "@qml-debug/qml-messages";
 
 describe("QML protocol type guards", () =>
 {
@@ -34,5 +34,13 @@ describe("QML protocol type guards", () =>
     {
         assert.strictEqual(isQmlEvaluateResponse({ type: "response", seq: 2, request_seq: 1, command: "evaluate", success: true, running: false, body: { handle: 3, type: "string", value: "ok" } }), true);
         assert.strictEqual(isQmlEvaluateResponse({ type: "response", seq: 2, request_seq: 1, command: "evaluate", success: true, running: false, body: { handle: 3, value: "missing type" } }), false);
+    });
+
+    it("checks scope requests and responses", () =>
+    {
+        assert.strictEqual(isQmlScopeRequest({ type: "request", seq: 1, command: "scope", arguments: { number: 2 } }), true);
+        assert.strictEqual(isQmlScopeRequest({ type: "request", seq: 1, command: "frame", arguments: { number: 2 } }), false);
+        assert.strictEqual(isQmlScopeResponse({ type: "response", seq: 2, request_seq: 1, command: "scope", success: true, running: false, body: { frameIndex: 0, index: 2, type: 1, object: { handle: 4, type: "object", value: {} } } }), true);
+        assert.strictEqual(isQmlScopeResponse({ type: "response", seq: 2, request_seq: 1, command: "frame", success: true, running: false, body: { frameIndex: 0, index: 2, type: 1 } }), false);
     });
 });

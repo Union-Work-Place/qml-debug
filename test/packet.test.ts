@@ -1,6 +1,7 @@
 import assert = require("assert");
 import Packet from "@qml-debug/packet";
 
+/** Unit tests for the binary packet helper used by all Qt services. */
 describe("Packet", () =>
 {
     it("round-trips primitive values", () =>

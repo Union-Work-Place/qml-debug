@@ -1,25 +1,39 @@
 import * as colors from "colors/safe";
 
 
+/** Log verbosity levels supported by the extension logger. */
 export enum LogLevel
 {
+    /** Most verbose diagnostic output. */
     Debug,
+    /** Function-entry tracing for request flow debugging. */
     Trace,
+    /** Rich diagnostic details that are still human-oriented. */
     Detail,
+    /** Standard informational output. */
     Info,
+    /** Recoverable warning output. */
     Warning,
+    /** Non-fatal error output. */
     Error,
+    /** Fatal error output that usually precedes termination. */
     CriticalError,
+    /** Positive completion output. */
     Success,
 }
 
+/** Singleton logger used by the adapter, services, and tests. */
 export default class Log
 {
+    /** Shared singleton instance. */
     private static instance_ = new Log();
 
+    /** Enables or disables all logging output. */
     public enabled = true;
+    /** Minimum severity that will be printed. */
     public level = LogLevel.Info;
 
+    /** Derive the caller name from the current stack trace. */
     private className(depth = 4)
     {
         const error = new Error();
@@ -30,14 +44,16 @@ export default class Log
             return "";
     }
 
+    /** Emit one log line when the logger is enabled and the level passes the threshold. */
     private log(level : LogLevel, text : string, sender? : string) : void
     {
-        if (!this.enabled && level < this.level)
+        if (!this.enabled || level < this.level)
             return;
 
         this.logConsole((sender !== undefined ? sender : this.className()), level, text);
     }
 
+    /** Format and print one log line to stdout. */
     public logConsole(fn : string, level : LogLevel, text : string) : void
     {
         let output = colors.white("[" + fn + "] ");
@@ -82,6 +98,7 @@ export default class Log
         console.log(output);
     }
 
+    /** Lazily evaluate and emit a debug log message. */
     public static debug(closure : string | (() => string)) : void
     {
         const log = Log.instance();
@@ -94,6 +111,7 @@ export default class Log
             log.log(LogLevel.Debug, closure);
     }
 
+            /** Emit a trace log entry that includes formatted argument values. */
     public static trace(fn : string, args : any) : void
     {
         const log = Log.instance();
@@ -147,6 +165,7 @@ export default class Log
         Log.instance().log(LogLevel.Trace, fn + "(" + traceText + ")");
     }
 
+    /** Lazily evaluate and emit a detail log message. */
     public static detail(closure : string | (() => string)) : void
     {
         const log = Log.instance();
@@ -159,31 +178,37 @@ export default class Log
             log.log(LogLevel.Detail, closure);
     }
 
+            /** Emit an informational log message. */
     public static info(text : string) : void
     {
         Log.instance().log(LogLevel.Info, text);
     }
 
+    /** Emit a warning log message. */
     public static warning(text : string) : void
     {
         Log.instance().log(LogLevel.Warning, text);
     }
 
+    /** Emit an error log message. */
     public static error(text : string) : void
     {
         Log.instance().log(LogLevel.Error, text);
     }
 
+    /** Emit a critical error log message. */
     public static critical(text : string) : void
     {
         Log.instance().log(LogLevel.CriticalError, text);
     }
 
+    /** Emit a success log message. */
     public static success(text : string) : void
     {
         Log.instance().log(LogLevel.Success, text);
     }
 
+    /** Return the shared logger instance. */
     public static instance() : Log
     {
         return this.instance_;

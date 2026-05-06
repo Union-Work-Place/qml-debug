@@ -50,24 +50,38 @@ import {
     isQmlResponse
 } from "@qml-debug/qml-messages";
 
+/** In-flight V8 request tracked until the runtime responds or times out. */
 interface ServiceAwaitingRequest
 {
+    /** Sequence id assigned to the request. */
     seqId : number;
+    /** Promise resolver for the matching response. */
     resolve(value? : QmlResponse<any>): void;
+    /** Promise reject callback for transport or protocol failures. */
     reject(value : Error): void;
+    /** Timeout guard for the request. */
     timeoutId : NodeJS.Timeout;
+    /** Shape validator for the matching response. */
     responseCheckFunction(value : any): boolean;
+    /** Whether unsuccessful responses should be rejected automatically. */
     autoReject : boolean;
 }
 
+/** Service wrapper around the legacy V8Debugger transport used by Qt. */
 export default class ServiceV8Debugger
 {
+    /** Monotonic sequence id for outgoing requests. */
     private seqId = -1;
+    /** Owning debug session used for transport access. */
     private session? : QmlDebugSession;
+    /** Requests waiting for a response from the runtime. */
     private awaitingRequests : ServiceAwaitingRequest[] = [];
+    /** Outstanding connect request used by the initial handshake. */
     private connectRequest?: ServiceAwaitingRequest;
+    /** Request timeout in milliseconds. */
     private requestTimeOut = 600000;
 
+    /** Decode incoming V8 packets and dispatch responses or events. */
     private packetReceived(packet : Packet)
     {
         Log.trace("ServiceV8Debugger.packetReceived", [ packet ]);
@@ -135,12 +149,14 @@ export default class ServiceV8Debugger
         }
     }
 
+    /** Allocate the next request sequence id. */
     private nextSeq() : number
     {
         this.seqId++;
         return this.seqId;
     }
 
+    /** Send one V8 request over the transport and await a validated response. */
     private makeRequest<ArgumentType, ResponseType>(requestCommand : string, requestArgs : ArgumentType, requestCheckFunction : any, responseCheckFunctionParam : any, autoReject? : boolean) : Promise<ResponseType>
     {
         Log.trace("ServiceV8Debugger.makeRequest", [ requestCommand, requestArgs ]);
@@ -202,6 +218,7 @@ export default class ServiceV8Debugger
         );
     }
 
+    /** Remove one in-flight request and cancel its timeout guard. */
     private finishOrCancelRequest(seqId : number)
     {
         Log.trace("ServiceV8Debugger.cancelRequest", [ seqId ]);
@@ -217,6 +234,7 @@ export default class ServiceV8Debugger
         }
     }
 
+    /** Request V8 capability information from the runtime. */
     public async requestVersion() : Promise<QmlVersionResponse>
     {
         Log.trace("ServiceV8Debugger.requestBacktrace", []);
@@ -231,6 +249,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Install a source breakpoint in the runtime. */
     public async requestSetBreakpoint(filenameParam : string, lineParam : number) : Promise<QmlSetBreakpointResponse>
     {
         Log.trace("ServiceV8Debugger.requestSetBreakpoint", [ filenameParam, lineParam ]);
@@ -251,6 +270,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Remove a previously installed source breakpoint. */
     public async requestClearBreakpoint(idParam : number) : Promise<QmlClearBreakpointResponse>
     {
         Log.trace("ServiceV8Debugger.requestClearBreakpoint", [ idParam ]);
@@ -267,6 +287,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Configure exception-break mode in the runtime. */
     public async requestSetExceptionBreakpoint(typeParam : string, enabledParam : boolean) : Promise<QmlSetExceptionBreakResponse>
     {
         Log.trace("ServiceV8Debugger.requestSetExceptionBreakpoint", [ typeParam, enabledParam ]);
@@ -284,6 +305,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Request the current call stack from the runtime. */
     public async requestBacktrace() : Promise<QmlBacktraceResponse>
     {
         Log.trace("ServiceV8Debugger.requestBacktrace", []);
@@ -300,6 +322,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Request one stack frame and its scope references. */
     public async requestFrame(frameId : number) : Promise<QmlFrameResponse>
     {
         Log.trace("ServiceV8Debugger.requestFrame", [ frameId ]);
@@ -316,6 +339,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Request one concrete scope object. */
     public async requestScope(scopeId : number) : Promise<QmlScopeResponse>
     {
         Log.trace("ServiceV8Debugger.requestScope", [ scopeId ]);
@@ -332,6 +356,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Request object details for one or more runtime handles. */
     public async requestLookup(handlesParam : number[]) : Promise<QmlLookupResponse>
     {
         Log.trace("ServiceV8Debugger.requestLookup", [ handlesParam ]);
@@ -348,6 +373,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Evaluate an expression in the selected stack frame. */
     public async requestEvaluate(frameId : number, expressionParam : string) : Promise<QmlEvaluateResponse>
     {
         Log.trace("ServiceV8Debugger.requestLookup", [ frameId, expressionParam ]);
@@ -366,6 +392,7 @@ export default class ServiceV8Debugger
         return response;
     }
 
+    /** Continue execution, optionally with a stepping action. */
     public async requestContinue(stepAction? : "in" | "out" | "next", stepCount? : 1) : Promise<QmlContinueResponse>
     {
         Log.trace("ServiceV8Debugger.requestContinue", []);
@@ -383,6 +410,7 @@ export default class ServiceV8Debugger
         return result;
     }
 
+    /** Interrupt the running runtime when the service supports suspend. */
     public async requestPause() : Promise<QmlResponse<undefined>>
     {
         Log.trace("ServiceV8Debugger.requestPause", []);
@@ -398,6 +426,7 @@ export default class ServiceV8Debugger
     }
 
 
+    /** Send the transport-level V8 connect packet used during handshake. */
     public connect() : Promise<void>
     {
         Log.trace("ServiceV8Debugger.connect", []);
@@ -441,9 +470,10 @@ export default class ServiceV8Debugger
         );
     }
 
+    /** Send the transport-level V8 disconnect packet. */
     public async disconnect() : Promise<void>
     {
-        this.requestContinue();
+        await this.requestContinue().catch(() : void => undefined);
 
         const packet = new Packet();
         packet.appendStringUTF8("V8DEBUG");
@@ -457,6 +487,7 @@ export default class ServiceV8Debugger
         await this.session!.packetManager!.writePacket(envelopePacket);
     }
 
+    /** Perform the V8 connect handshake and log the negotiated version. */
     public async handshake() : Promise<void>
     {
         Log.trace("ServiceV8Debugger.handshake", []);
@@ -467,16 +498,31 @@ export default class ServiceV8Debugger
         Log.info("V8 Service Version: " + versionResponse.body.V8Version);
     }
 
+    /** Reset transient service state before a connection starts. */
     public async initialize() : Promise<void>
     {
         Log.trace("ServiceV8Debugger.initialize", []);
     }
 
+    /** Clear in-flight request bookkeeping after a connection ends. */
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceV8Debugger.deinitialize", []);
+
+        if (this.connectRequest !== undefined)
+        {
+            clearTimeout(this.connectRequest.timeoutId);
+            this.connectRequest = undefined;
+        }
+
+        for (const current of this.awaitingRequests)
+            clearTimeout(current.timeoutId);
+
+        this.awaitingRequests = [];
+        this.seqId = -1;
     }
 
+    /** Register the V8Debugger packet handler on the shared transport. */
     public constructor(session : QmlDebugSession)
     {
         Log.trace("ServiceV8Debugger.constructor", [ session ]);
