@@ -34,6 +34,12 @@
 - [x] Add full `QmlDebugger` object-tree decoding with property payloads and context groupings so the inspector view can show object metadata instead of only runtime ids.
 - [x] Add launch configuration snippets and presets for `CanvasFrameRate,EngineControl,DebugMessages` so profiler capture can be enabled without hand-editing `services` arrays.
 
+## Phase 6: Quality and Documentation Sweep - Completed
+
+- [x] Harden inspector custom requests so source lookup and object-tree expansion fail fast when required Qt services are missing.
+- [x] Make runtime views and the optional Qt-backed integration harness resilient to request failures and teardown edge cases.
+- [x] Add API descriptions for the new inspector, profiler, runtime-view, and harness surfaces introduced in the recent phases.
+
 ## Follow-Up
 
 - Replace the current transport-level profiler event classifier with a semantic decoder for the Qt Creator timeline stream once more real fixture captures are available.

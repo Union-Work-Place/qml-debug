@@ -4,51 +4,83 @@ import { profilerFeatureNamesFromMask, DEFAULT_PROFILER_FEATURE_MASK } from "@qm
 import { QmlDebugSession } from "@qml-debug/debug-adapter";
 
 
+/** Compact packet summary retained for quick profiler inspection. */
 interface ProfilerPacketSummary
 {
+    /** Capture timestamp in ISO-8601 form. */
     timestamp : string;
+    /** Packet size in bytes. */
     size : number;
+    /** Best-effort transport-level classification. */
     kind : string;
+    /** Hex preview used in JSON export and UI summaries. */
     hexPreview : string;
 }
 
+/** Structured event derived from a captured profiler packet. */
 export interface QmlProfilerTimelineEvent extends ProfilerPacketSummary
 {
+    /** Best-effort decoded primitive payload, when recognized. */
     decodedValue? : boolean | number | string | number[];
 }
 
+/** Export payload used by the profiler JSON command. */
 export interface QmlProfilerExport
 {
+    /** Point-in-time profiler summary. */
     summary : QmlProfilerSnapshot;
+    /** Frequency table grouped by timeline event kind. */
     eventKinds : { kind : string; count : number }[];
+    /** Structured event timeline retained in memory. */
     timeline : QmlProfilerTimelineEvent[];
 }
 
+/** Snapshot of the current profiler capture state. */
 export interface QmlProfilerSnapshot
 {
+    /** Whether the profiler capture is currently running. */
     recording : boolean;
+    /** Requested Qt feature mask in decimal form. */
     requestedFeatureMask : string;
+    /** Human-readable feature names derived from the mask. */
     requestedFeatures : string[];
+    /** Requested packet flush interval in milliseconds. */
     flushInterval : number;
+    /** Number of packets captured so far. */
     packetCount : number;
+    /** Number of payload bytes captured so far. */
     receivedBytes : number;
+    /** Timestamp of the most recently captured packet. */
     lastPacketTimestamp? : string;
+    /** Recent packet summaries for lightweight inspection. */
     recentPackets : ProfilerPacketSummary[];
+    /** Structured timeline events retained in memory. */
     timelineEvents : QmlProfilerTimelineEvent[];
 }
 
+/** Service wrapper around the CanvasFrameRate profiler transport. */
 export default class ServiceQmlProfiler
 {
+    /** Owning debug session used for transport access. */
     private session? : QmlDebugSession;
+    /** Whether capture is currently active. */
     private recording = false;
+    /** Requested feature mask used for the next or active capture. */
     private requestedFeatureMask = DEFAULT_PROFILER_FEATURE_MASK;
+    /** Requested packet flush interval in milliseconds. */
     private flushInterval = 250;
+    /** Number of packets captured during the current snapshot. */
     private packetCount = 0;
+    /** Total number of payload bytes captured during the current snapshot. */
     private receivedBytes = 0;
+    /** Timestamp of the most recently captured packet. */
     private lastPacketTimestamp? : string;
+    /** Rolling window of recent packet summaries. */
     private recentPackets : ProfilerPacketSummary[] = [];
+    /** Rolling window of structured timeline events. */
     private timelineEvents : QmlProfilerTimelineEvent[] = [];
 
+    /** Decode a Qt UTF-16 string packet when the payload layout matches. */
     private tryDecodeUtf16String(rawPacket : Buffer) : string | undefined
     {
         if (rawPacket.length < 4 || (rawPacket.length - 4) % 2 !== 0)
@@ -61,6 +93,7 @@ export default class ServiceQmlProfiler
         return new Packet(rawPacket).readStringUTF16();
     }
 
+    /** Decode a Qt UTF-8 string packet when the payload layout matches. */
     private tryDecodeUtf8String(rawPacket : Buffer) : string | undefined
     {
         if (rawPacket.length < 4)
@@ -73,6 +106,7 @@ export default class ServiceQmlProfiler
         return new Packet(rawPacket).readStringUTF8();
     }
 
+    /** Classify and decode a captured profiler packet into a structured event. */
     private decodeTimelineEvent(rawPacket : Buffer, timestamp : string) : QmlProfilerTimelineEvent
     {
         const hexPreview = rawPacket.toString("hex").slice(0, 128);
@@ -151,6 +185,7 @@ export default class ServiceQmlProfiler
         };
     }
 
+    /** Record a captured profiler packet in the rolling snapshot buffers. */
     private packetReceived(packet : Packet) : void
     {
         Log.trace("ServiceQmlProfiler.packetReceived", [ packet ]);
@@ -174,6 +209,7 @@ export default class ServiceQmlProfiler
             this.timelineEvents.shift();
     }
 
+    /** Send the current profiler recording state to the Qt runtime. */
     private async sendRecordingStatus() : Promise<void>
     {
         const packet = new Packet();
@@ -194,6 +230,7 @@ export default class ServiceQmlProfiler
         await this.session!.packetManager.writePacket(envelope);
     }
 
+    /** Return a snapshot of the current profiler capture state. */
     public getSnapshot() : QmlProfilerSnapshot
     {
         return {
@@ -209,6 +246,7 @@ export default class ServiceQmlProfiler
         };
     }
 
+    /** Export the in-memory capture buffers as structured JSON data. */
     public exportSnapshot() : QmlProfilerExport
     {
         const eventKinds = new Map<string, number>();
@@ -224,6 +262,7 @@ export default class ServiceQmlProfiler
         };
     }
 
+    /** Start profiler capture with the requested feature mask and flush interval. */
     public async startRecording(featureMask : bigint, flushInterval : number) : Promise<QmlProfilerSnapshot>
     {
         this.requestedFeatureMask = featureMask;
@@ -233,6 +272,7 @@ export default class ServiceQmlProfiler
         return this.getSnapshot();
     }
 
+    /** Stop profiler capture while preserving the buffered snapshot. */
     public async stopRecording() : Promise<QmlProfilerSnapshot>
     {
         this.recording = false;
@@ -240,6 +280,7 @@ export default class ServiceQmlProfiler
         return this.getSnapshot();
     }
 
+    /** Clear captured profiler packets and decoded timeline events. */
     public clear() : QmlProfilerSnapshot
     {
         this.packetCount = 0;
@@ -250,6 +291,7 @@ export default class ServiceQmlProfiler
         return this.getSnapshot();
     }
 
+    /** Reset profiler state before the service becomes active. */
     public async initialize() : Promise<void>
     {
         Log.trace("ServiceQmlProfiler.initialize", []);
@@ -259,6 +301,7 @@ export default class ServiceQmlProfiler
         this.clear();
     }
 
+    /** Stop capture bookkeeping and clear any buffered packets. */
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceQmlProfiler.deinitialize", []);
@@ -266,6 +309,7 @@ export default class ServiceQmlProfiler
         this.clear();
     }
 
+    /** Register the profiler packet handler on the shared transport. */
     public constructor(session : QmlDebugSession)
     {
         Log.trace("ServiceQmlProfiler.constructor", [ session ]);

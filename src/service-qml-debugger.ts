@@ -5,66 +5,107 @@ import { QmlDebugSession } from "@qml-debug/debug-adapter";
 
 interface QmlEngine
 {
+    /** Human-readable engine name reported by the Qt runtime. */
     name : string;
+    /** Runtime identifier used by subsequent QmlDebugger requests. */
     debugId : number;
 }
 
+/** Decoded QmlDebugger object reference including optional subtree metadata. */
 export interface QmlDebugObjectReference
 {
+    /** Runtime object id used by QmlDebugger requests. */
     debugId : number;
+    /** Concrete Qt class name for the runtime object. */
     className : string;
+    /** QML id string, when the object defines one. */
     idString : string;
+    /** Display name reported by the runtime. */
     name : string;
+    /** Source location where the object was declared. */
     source : {
+        /** Source URL or file name reported by Qt. */
         url : string;
+        /** 1-based source line reported by Qt. */
         lineNumber : number;
+        /** 1-based source column reported by Qt. */
         columnNumber : number;
     };
+    /** Context id that owns the object. */
     contextDebugId : number;
+    /** Parent runtime object id, or -1 for a root object. */
     parentDebugId : number;
+    /** Number of decoded property payloads. */
     propertyCount : number;
+    /** Decoded property payloads for the object. */
     properties : QmlDebugProperty[];
+    /** Child objects that belong to the decoded subtree. */
     children : QmlDebugObjectReference[];
 }
 
+/** Decoded property payload attached to a QmlDebugger object. */
 export interface QmlDebugProperty
 {
+    /** Qt metatype id for the serialized property value. */
     typeId : number;
+    /** Property name. */
     name : string;
+    /** Raw serialized payload represented as hexadecimal text. */
     rawValue : string;
+    /** Qt type name reported for the payload. */
     valueTypeName : string;
+    /** String form reported by Qt for display purposes. */
     valueContents : string;
+    /** Whether the property exposes a notify signal. */
     hasNotifySignal : boolean;
+    /** Best-effort decoded primitive value when the type is recognized. */
     decodedValue : null | boolean | number | string;
 }
 
+/** Context grouping used by the inspector tree view. */
 export interface QmlDebugContextNode
 {
+    /** Runtime context id. */
     debugId : number;
+    /** Runtime object ids that belong to the context subtree. */
     objectIds : number[];
 }
 
+/** Materialized subtree returned for one or more selected runtime object ids. */
 export interface QmlDebugObjectTreeSnapshot
 {
+    /** Requested selection after de-duplication and filtering. */
     selectedObjectIds : number[];
+    /** Decoded root objects for the selection. */
     objects : QmlDebugObjectReference[];
+    /** Context groupings derived from the decoded subtree. */
     contexts : QmlDebugContextNode[];
 }
 
+/** In-flight request bookkeeping for asynchronous QmlDebugger commands. */
 interface ServiceAwaitingRequest
 {
+    /** Monotonic request sequence id. */
     seqId : number;
+    /** Promise resolver for a matching service response. */
     resolve: any;
+    /** Promise reject callback for timeouts and transport failures. */
     reject: any;
+    /** Timeout guard for the request. */
     timerId : NodeJS.Timeout;
 }
 
+/** Service wrapper around the Qt QmlDebugger protocol. */
 export default class ServiceQmlDebugger
 {
+    /** Monotonic sequence id for service requests. */
     private seqId = 0;
+    /** Owning debug session used for transport access. */
     protected session? : QmlDebugSession;
+    /** Outstanding asynchronous requests awaiting a Qt reply. */
     public awaitingRequests : ServiceAwaitingRequest[] = [];
 
+    /** Request the list of active QML engines from the runtime. */
     public async requestListEngines() : Promise<QmlEngine[]>
     {
         Log.trace("QmlDebugger.requestListEngines", []);
@@ -88,6 +129,7 @@ export default class ServiceQmlDebugger
         return engines;
     }
 
+    /** Decode a primitive property payload when its Qt metatype is recognized. */
     private decodePropertyValue(typeId : number, valueContents : string, rawValue : Buffer) : null | boolean | number | string
     {
         if (rawValue.length === 0)
@@ -132,6 +174,7 @@ export default class ServiceQmlDebugger
         }
     }
 
+    /** Group a decoded object subtree by context id for inspector presentation. */
     private collectObjectsByContext(objects : QmlDebugObjectReference[]) : QmlDebugContextNode[]
     {
         const contexts = new Map<number, QmlDebugContextNode>();
@@ -154,6 +197,7 @@ export default class ServiceQmlDebugger
         return [ ...contexts.values() ].sort((left, right) : number => { return left.debugId - right.debugId; });
     }
 
+    /** Decode a QmlDebugger object reference and, optionally, its subtree payload. */
     private decodeObjectReference(packet : Packet, simple : boolean) : QmlDebugObjectReference
     {
         const object = {
@@ -217,6 +261,7 @@ export default class ServiceQmlDebugger
         return object;
     }
 
+    /** Request a fully decoded object subtree for a single runtime object id. */
     public async requestObject(debugId : number) : Promise<QmlDebugObjectReference>
     {
         Log.trace("QmlDebugger.requestObject", [ debugId ]);
@@ -229,6 +274,7 @@ export default class ServiceQmlDebugger
         return this.decodeObjectReference(packet, false);
     }
 
+    /** Materialize decoded object trees and context groupings for the requested ids. */
     public async requestObjectTreeSnapshot(objectIds : number[]) : Promise<QmlDebugObjectTreeSnapshot>
     {
         Log.trace("QmlDebugger.requestObjectTreeSnapshot", [ objectIds ]);

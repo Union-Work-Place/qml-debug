@@ -639,6 +639,36 @@ describe("QmlDebugSession", () =>
         assert.deepStrictEqual(response.body.contexts, [ { debugId: 7, objectIds: [ 41 ] } ]);
     });
 
+    it("rejects inspector source lookups when the QmlDebugger service is unavailable", async () =>
+    {
+        const { session, declarative, qmlDebugger } = createSession();
+        declarative.capabilities.services = declarative.capabilities.services.filter((service : { name : string }) : boolean => { return service.name !== "QmlDebugger"; });
+
+        const response = session.callCustom("qml/inspector/selectBySource", { path: "/project/qml/Main.qml", line: 12, column: 3 });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(response.success, false);
+        assert.notStrictEqual(response.message, undefined);
+        assert.strictEqual(response.message!.includes("QmlDebugger"), true);
+        assert.deepStrictEqual(qmlDebugger.objectLookupCalls, []);
+    });
+
+    it("rejects inspector object tree requests when the QmlDebugger service is unavailable", async () =>
+    {
+        const { session, declarative, qmlDebugger } = createSession();
+        declarative.capabilities.services = declarative.capabilities.services.filter((service : { name : string }) : boolean => { return service.name !== "QmlDebugger"; });
+
+        const response = session.callCustom("qml/inspector/objectTree", { objectIds: [ 41 ] });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(response.success, false);
+        assert.notStrictEqual(response.message, undefined);
+        assert.strictEqual(response.message!.includes("QmlDebugger"), true);
+        assert.deepStrictEqual(qmlDebugger.objectTreeCalls, []);
+    });
+
     it("starts and stops profiler capture through custom requests", async () =>
     {
         const { session, profiler } = createSession();

@@ -418,15 +418,29 @@ export class QmlDebugSession extends LoggingDebugSession
         };
     }
 
+    /** Validate that a single Qt service is available before handling a custom request. */
     private requireQtService(response : DebugProtocol.Response, serviceName : string, errorNo : number) : boolean
     {
-        if (this.declarativeDebugClient.isServiceAvailable(serviceName))
+        return this.requireQtServices(response, [ serviceName ], errorNo);
+    }
+
+    /** Validate that every required Qt service is available before handling a custom request. */
+    private requireQtServices(response : DebugProtocol.Response, serviceNames : string[], errorNo : number) : boolean
+    {
+        const missingServices = serviceNames.filter((serviceName) : boolean =>
+        {
+            return !this.declarativeDebugClient.isServiceAvailable(serviceName);
+        });
+
+        if (missingServices.length === 0)
             return true;
 
         this.sendErrorResponse(response,
             {
                 id: errorNo,
-                format: "QML Debug: Required Qt debug service '" + serviceName + "' is not available in the active session.",
+                format: "QML Debug: Required Qt debug service" + (missingServices.length > 1 ? "s " : " ")
+                    + missingServices.map((serviceName) : string => { return "'" + serviceName + "'"; }).join(", ")
+                    + " " + (missingServices.length > 1 ? "are" : "is") + " not available in the active session.",
                 showUser: true
             }
         );
@@ -507,7 +521,7 @@ export class QmlDebugSession extends LoggingDebugSession
 
         if (command === "qml/inspector/selectBySource")
         {
-            if (!this.requireQtService(response, "QmlInspector", 1006))
+            if (!this.requireQtServices(response, [ "QmlInspector", "QmlDebugger" ], 1006))
                 return;
 
             const filename = typeof args?.path === "string" ? args.path : "";
@@ -530,6 +544,9 @@ export class QmlDebugSession extends LoggingDebugSession
 
         if (command === "qml/inspector/objectTree")
         {
+            if (!this.requireQtService(response, "QmlDebugger", 1009))
+                return;
+
             const requestedObjectIds = Array.isArray(args?.objectIds)
                 ? args.objectIds.filter((value : unknown) : value is number => { return typeof value === "number"; })
                 : this.inspector.getSnapshot().currentObjectIds;
