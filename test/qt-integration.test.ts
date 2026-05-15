@@ -1,7 +1,7 @@
 import assert = require("assert");
 import fs = require("fs");
 import path = require("path");
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import { QmlDebugSession } from "@qml-debug/adapter/debug-adapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 
 

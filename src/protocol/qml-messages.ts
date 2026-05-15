@@ -10,7 +10,7 @@ import
     isQmlVariable,
     QmlBreakpoint,
     isQmlBreakpoint
-} from "@qml-debug/qml-types";
+} from "@qml-debug/protocol/qml-types";
 
 
 // MESSAGE

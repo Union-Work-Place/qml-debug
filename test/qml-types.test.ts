@@ -1,6 +1,6 @@
 import assert = require("assert");
-import { isQmlBacktrace, isQmlVariable } from "@qml-debug/qml-types";
-import { isQmlBreakEvent, isQmlEvaluateResponse, isQmlLookupRequest, isQmlScopeRequest, isQmlScopeResponse } from "@qml-debug/qml-messages";
+import { isQmlBacktrace, isQmlVariable } from "@qml-debug/protocol/qml-types";
+import { isQmlBreakEvent, isQmlEvaluateResponse, isQmlLookupRequest, isQmlScopeRequest, isQmlScopeResponse } from "@qml-debug/protocol/qml-messages";
 
 describe("QML protocol type guards", () =>
 {

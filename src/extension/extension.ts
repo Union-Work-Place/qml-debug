@@ -2,9 +2,9 @@
 require("source-map-support").install();
 /* eslint-enable */
 
-import Log, { LogLevel } from "@qml-debug/log";
-import { QmlDebugAdapterFactory } from "@qml-debug/debug-adapter";
-import { registerRuntimeViews } from "@qml-debug/runtime-views";
+import Log, { LogLevel } from "@qml-debug/common/log";
+import { QmlDebugAdapterFactory } from "@qml-debug/adapter/debug-adapter";
+import { registerRuntimeViews } from "@qml-debug/extension/runtime-views";
 
 import * as vscode from "vscode";
 

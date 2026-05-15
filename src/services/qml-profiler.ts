@@ -1,7 +1,7 @@
-import Log from "@qml-debug/log";
-import Packet from "@qml-debug/packet";
-import { profilerFeatureNamesFromMask, DEFAULT_PROFILER_FEATURE_MASK } from "@qml-debug/profiler-features";
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import Log from "@qml-debug/common/log";
+import Packet from "@qml-debug/transport/packet";
+import { profilerFeatureNamesFromMask, DEFAULT_PROFILER_FEATURE_MASK } from "@qml-debug/protocol/profiler-features";
+import { QmlDebugSession } from "@qml-debug/adapter/debug-adapter";
 
 
 /** Compact packet summary retained for quick profiler inspection. */

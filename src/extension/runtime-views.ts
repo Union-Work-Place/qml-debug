@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILER_FEATURE_MASK } from "@qml-debug/profiler-features";
+import { DEFAULT_PROFILER_FEATURE_MASK } from "@qml-debug/protocol/profiler-features";
 import * as vscode from "vscode";
 
 

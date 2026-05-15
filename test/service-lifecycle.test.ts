@@ -1,10 +1,10 @@
 import assert = require("assert");
-import Packet from "@qml-debug/packet";
-import ServiceQmlDebugger from "@qml-debug/service-qml-debugger";
-import ServiceQmlInspector from "@qml-debug/service-qml-inspector";
-import ServiceV8Debugger from "@qml-debug/service-v8-debugger";
-import ServiceDeclarativeDebugClient from "@qml-debug/service-declarative-debug-client";
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import Packet from "@qml-debug/transport/packet";
+import ServiceQmlDebugger from "@qml-debug/services/qml-debugger";
+import ServiceQmlInspector from "@qml-debug/services/qml-inspector";
+import ServiceV8Debugger from "@qml-debug/services/v8-debugger";
+import ServiceDeclarativeDebugClient from "@qml-debug/services/declarative-debug-client";
+import { QmlDebugSession } from "@qml-debug/adapter/debug-adapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 
 

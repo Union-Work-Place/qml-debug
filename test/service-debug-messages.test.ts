@@ -1,6 +1,6 @@
 import assert = require("assert");
-import Packet from "@qml-debug/packet";
-import ServiceDebugMessages from "@qml-debug/service-debug-messages";
+import Packet from "@qml-debug/transport/packet";
+import ServiceDebugMessages from "@qml-debug/services/debug-messages";
 import { DebugProtocol } from "@vscode/debugprotocol";
 
 /** DebugMessages subclass that exposes packetReceived for tests. */

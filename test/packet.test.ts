@@ -1,5 +1,5 @@
 import assert = require("assert");
-import Packet from "@qml-debug/packet";
+import Packet from "@qml-debug/transport/packet";
 
 /** Unit tests for the binary packet helper used by all Qt services. */
 describe("Packet", () =>

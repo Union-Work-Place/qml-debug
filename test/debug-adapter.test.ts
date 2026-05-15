@@ -1,6 +1,6 @@
 import assert = require("assert");
-import PacketManager from "@qml-debug/packet-manager";
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import PacketManager from "@qml-debug/transport/packet-manager";
+import { QmlDebugSession } from "@qml-debug/adapter/debug-adapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 import { EventEmitter } from "events";
 

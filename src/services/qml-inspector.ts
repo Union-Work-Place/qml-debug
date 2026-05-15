@@ -1,6 +1,6 @@
-import Log from "@qml-debug/log";
-import Packet from "@qml-debug/packet";
-import { QmlDebugSession } from "@qml-debug/debug-adapter";
+import Log from "@qml-debug/common/log";
+import Packet from "@qml-debug/transport/packet";
+import { QmlDebugSession } from "@qml-debug/adapter/debug-adapter";
 
 
 /** In-flight QmlInspector request tracked until Qt replies or times out. */

@@ -58,13 +58,19 @@
 - [x] Propagate transport write failures immediately from service request helpers instead of waiting for request timeouts, and add regression coverage for write errors during attach, inspector actions, and object-tree expansion.
 - [x] Make the declarative handshake fail closed on malformed operations or missing required services instead of logging and resolving the handshake path, then cover those failure modes with focused service tests.
 
-## Phase 10: Source Lookup and Runtime View Fidelity
+## Phase 10: Repository Layout Reorganization - Completed
+
+- [x] Move the transport, protocol, service, adapter, extension, and common implementation files into domain-specific source directories so the repository is no longer organized as a flat `src/` surface.
+- [x] Migrate internal imports, tests, and build entry points to the new directory layout so temporary root-level compatibility shims are no longer needed in `src/`.
+- [x] Validate that the reorganized layout still typechecks, bundles, and passes the unit suite before marking the refactor complete.
+
+## Phase 11: Source Lookup and Runtime View Fidelity
 
 - [ ] Preserve full normalized QML source paths for inspector source lookups instead of reducing requests to the basename, so duplicated `Main.qml`-style files in different `qrc:/` or filesystem roots cannot resolve to the wrong object tree.
 - [ ] Replace the single remembered QML session fallback in the runtime views with session-aware tracking that survives multiple concurrent sessions and termination of the last focused session.
 - [ ] Reduce passive one-second polling in the runtime views in favor of event-driven refresh where possible, and add regressions for session switching, termination, and duplicate-source-name inspector lookups.
 
-## Phase 11: Profiler Capability Normalization and Compatibility
+## Phase 12: Profiler Capability Normalization and Compatibility
 
 - [ ] Align profiler capability reporting, launch defaults, and command gating across `CanvasFrameRate` and `EngineControl` so the UI cannot advertise profiler availability that the command path later rejects.
 - [ ] Extend profiler/runtime-view tests to cover Qt runtimes that expose different profiler service combinations and verify start, stop, clear, and export behavior for each supported combination.

@@ -1,14 +1,14 @@
-import Log from "@qml-debug/log";
-import ServiceDebugMessages from "@qml-debug/service-debug-messages";
-import ServiceQmlDebugger, { QmlDebugObjectReference, QmlDebugObjectTreeSnapshot } from "@qml-debug/service-qml-debugger";
-import ServiceNativeDebugger from "@qml-debug/service-v8-debugger";
-import ServiceDeclarativeDebugClient, { NegotiatedQtDebugCapabilities } from "@qml-debug/service-declarative-debug-client";
-import ServiceQmlInspector, { QmlInspectorSnapshot } from "@qml-debug/service-qml-inspector";
-import ServiceQmlProfiler, { QmlProfilerExport, QmlProfilerSnapshot } from "@qml-debug/service-qml-profiler";
-import { parseProfilerFeatureMask } from "@qml-debug/profiler-features";
-import PacketManager from "@qml-debug/packet-manager";
-import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/qml-messages";
-import { QmlFrame, QmlVariable } from "@qml-debug/qml-types";
+import Log from "@qml-debug/common/log";
+import ServiceDebugMessages from "@qml-debug/services/debug-messages";
+import ServiceQmlDebugger, { QmlDebugObjectReference, QmlDebugObjectTreeSnapshot } from "@qml-debug/services/qml-debugger";
+import ServiceNativeDebugger from "@qml-debug/services/v8-debugger";
+import ServiceDeclarativeDebugClient, { NegotiatedQtDebugCapabilities } from "@qml-debug/services/declarative-debug-client";
+import ServiceQmlInspector, { QmlInspectorSnapshot } from "@qml-debug/services/qml-inspector";
+import ServiceQmlProfiler, { QmlProfilerExport, QmlProfilerSnapshot } from "@qml-debug/services/qml-profiler";
+import { parseProfilerFeatureMask } from "@qml-debug/protocol/profiler-features";
+import PacketManager from "@qml-debug/transport/packet-manager";
+import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/protocol/qml-messages";
+import { QmlFrame, QmlVariable } from "@qml-debug/protocol/qml-types";
 
 import path = require("path");
 import { ChildProcess, spawn } from "child_process";
