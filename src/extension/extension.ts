@@ -4,6 +4,7 @@ require("source-map-support").install();
 
 import Log, { LogLevel } from "@qml-debug/common/log";
 import { QmlDebugAdapterFactory } from "@qml-debug/adapter/debug-adapter";
+import { registerAutomationControl } from "@qml-debug/extension/automation-control";
 import { registerRuntimeViews } from "@qml-debug/extension/runtime-views";
 
 import * as vscode from "vscode";
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext) : void
     }));
     updateConfigurationContexts();
 
+    registerAutomationControl(context);
     registerRuntimeViews(context);
 
     // Register Commands

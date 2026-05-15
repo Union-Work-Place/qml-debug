@@ -770,7 +770,7 @@ describe("QmlDebugSession", () =>
         assert.ok(Array.isArray(exported.body.timeline));
     });
 
-    it("rejects profiler start and stop when CanvasFrameRate is missing even if EngineControl is present", async () =>
+    it("rejects profiler commands when CanvasFrameRate is missing even if EngineControl is present", async () =>
     {
         const { session, declarative } = createSession();
         declarative.capabilities.services = [
@@ -797,6 +797,18 @@ describe("QmlDebugSession", () =>
         await Promise.resolve();
         assert.strictEqual(stop.success, false);
         assert.strictEqual(stop.message!.includes("CanvasFrameRate"), true);
+
+        const clear = session.callCustom("qml/profiler/clear");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(clear.success, false);
+        assert.strictEqual(clear.message!.includes("CanvasFrameRate"), true);
+
+        const exportSnapshot = session.callCustom("qml/profiler/export");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(exportSnapshot.success, false);
+        assert.strictEqual(exportSnapshot.message!.includes("CanvasFrameRate"), true);
     });
 
     it("keeps launch defaults and profiler presets aligned", () =>

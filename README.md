@@ -3,7 +3,7 @@
 
 <p>
   <img alt="Version" src="https://img.shields.io/badge/version-0.0.1-blue.svg?cacheSeconds=2592000" />
-  <img src="https://img.shields.io/badge/vscode-%5E1.54.0-blue.svg" />
+    <img src="https://img.shields.io/badge/vscode-%5E1.120.0-blue.svg" />
   <a href="#" target="_blank">
     <img alt="License: GPL--3.0" src="https://img.shields.io/badge/License-GPL--3.0-green.svg" />
   </a>
@@ -164,6 +164,42 @@ Available commands:
 - `QML Debug: Export QML Profiler Snapshot`
 
 The profiler export now classifies captured packets into transport-level event kinds such as booleans, integers, strings, arrays, and opaque binary payloads. This makes scene graph and binding traffic easier to inspect in VS Code even though it is still not a full Qt Creator semantic decoder.
+
+## Automation Control Plane
+
+The extension exposes a stable machine-facing command surface for MCP servers, AI agents, and other automation clients. It is intentionally separate from the interactive tree-view commands: clients call one generic command with an action name and receive a deterministic JSON response.
+
+Available commands:
+
+- `qml-debug.automation.describe` returns the schema version, action catalog, required argument names, and stable error codes.
+- `qml-debug.automation.sessions` returns live QML debug sessions and the preferred session id.
+- `qml-debug.automation.run` executes one action. It accepts either `{ "action": "dap.evaluate", "sessionId": "...", "args": { ... } }` or the shorthand command arguments `"dap.evaluate", { ... }`.
+
+Supported action groups:
+
+- Session lifecycle: `debug.launch`, `debug.attach`, `debug.stop`, `sessions`.
+- Breakpoints: `breakpoints.setSource`.
+- DAP runtime requests: `dap.stackTrace`, `dap.scopes`, `dap.variables`, `dap.evaluate`, `dap.pause`, `dap.continue`, `dap.next`, `dap.stepIn`, `dap.stepOut`.
+- Qt runtime state: `runtime.capabilities`, `inspector.status`, `inspector.setEnabled`, `inspector.setShowAppOnTop`, `inspector.selectObjects`, `inspector.selectBySource`, `inspector.objectTree`.
+- Profiler control: `profiler.status`, `profiler.start`, `profiler.stop`, `profiler.clear`, `profiler.export`.
+
+Responses always include `ok`, `schemaVersion`, and either `body` or a stable `error` object. The initial error codes are `InvalidArguments`, `NoQmlSession`, `SessionNotFound`, `UnsupportedAction`, and `RequestFailed`, so MCP clients can branch on failures without parsing localized UI text.
+
+Example:
+
+```json
+{
+    "action": "inspector.selectBySource",
+    "sessionId": "qml-session-id",
+    "args": {
+        "path": "/workspace/qml/Main.qml",
+        "line": 42,
+        "column": 9
+    }
+}
+```
+
+The automation surface uses the negotiated Qt capabilities already exposed by the debug adapter. Profiler actions require the `CanvasFrameRate` service, inspector actions require `QmlInspector`, and object-tree/source lookup requests require `QmlDebugger` where appropriate.
 
 ## Launch Presets
 

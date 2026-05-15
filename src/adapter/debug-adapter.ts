@@ -621,6 +621,9 @@ export class QmlDebugSession extends LoggingDebugSession
 
         if (command === "qml/profiler/clear")
         {
+            if (!this.requireQtService(response, "CanvasFrameRate", 1007))
+                return;
+
             response.body = this.profiler.clear();
             this.sendResponse(response);
             return;
@@ -628,6 +631,9 @@ export class QmlDebugSession extends LoggingDebugSession
 
         if (command === "qml/profiler/export")
         {
+            if (!this.requireQtService(response, "CanvasFrameRate", 1007))
+                return;
+
             response.body = this.profiler.exportSnapshot();
             this.sendResponse(response);
             return;

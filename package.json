@@ -29,26 +29,10 @@
         "Debugger"
     ],
     "engines": {
-        "vscode": "^1.54.0"
+        "vscode": "^1.120.0"
     },
     "main": "dist/extension.js",
     "activationEvents": [
-        "onCommand:qml-debug.version",
-        "onCommand:qml-debug.copyright",
-        "onCommand:qml-debug.enableFilterFunctions",
-        "onCommand:qml-debug.disableFilterFunctions",
-        "onCommand:qml-debug.enableSortMembers",
-        "onCommand:qml-debug.disableSortMembers",
-        "onCommand:qml-debug.inspectCurrentQmlItem",
-        "onCommand:qml-debug.toggleInspector",
-        "onCommand:qml-debug.toggleInspectorAppOnTop",
-        "onCommand:qml-debug.startProfiler",
-        "onCommand:qml-debug.stopProfiler",
-        "onCommand:qml-debug.clearProfiler",
-        "onCommand:qml-debug.exportProfilerSnapshot",
-        "onCommand:qml-debug.refreshRuntimeTools",
-        "onView:qml-debug.inspector",
-        "onView:qml-debug.profiler",
         "onDebugResolve:qml"
     ],
     "contributes": {
@@ -136,6 +120,21 @@
                 "category": "QML Debug",
                 "title": "Refresh Runtime Tools",
                 "icon": "$(refresh)"
+            },
+            {
+                "command": "qml-debug.automation.describe",
+                "category": "QML Debug Automation",
+                "title": "Describe Automation API"
+            },
+            {
+                "command": "qml-debug.automation.sessions",
+                "category": "QML Debug Automation",
+                "title": "List Automation Sessions"
+            },
+            {
+                "command": "qml-debug.automation.run",
+                "category": "QML Debug Automation",
+                "title": "Run Automation Action"
             }
         ],
         "configuration": [
@@ -510,7 +509,7 @@
         "@types/glob": "^7.1.4",
         "@types/mocha": "^9.0.0",
         "@types/node": "14.x",
-        "@types/vscode": "^1.54.0",
+        "@types/vscode": "^1.120.0",
         "@typescript-eslint/eslint-plugin": "^5.1.0",
         "@typescript-eslint/parser": "^5.1.0",
         "@vscode/debugadapter-testsupport": "^1.51.0",

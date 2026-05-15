@@ -92,6 +92,18 @@ export const window =
 /** Mocked debug API. */
 export const debug =
 {
+    /** Mocked breakpoints known to VS Code. */
+    breakpoints: [] as any[],
+    /** Add breakpoints to the mocked VS Code model. */
+    addBreakpoints: (breakpoints : any[]) : void =>
+    {
+        debug.breakpoints.push(...breakpoints);
+    },
+    /** Remove breakpoints from the mocked VS Code model. */
+    removeBreakpoints: (breakpoints : any[]) : void =>
+    {
+        debug.breakpoints = debug.breakpoints.filter((breakpoint) : boolean => { return !breakpoints.includes(breakpoint); });
+    },
     /** Register a mocked debug adapter descriptor factory. */
     registerDebugAdapterDescriptorFactory: () : Disposable => new Disposable(),
     /** Register a mocked debug-session start listener. */
@@ -103,8 +115,72 @@ export const debug =
     /** Active debug session stub. */
     activeDebugSession: undefined as any,
     /** Active debug sessions. */
-    sessions: [] as any[]
+    sessions: [] as any[],
+    /** Start a mocked debug session. */
+    startDebugging: async () : Promise<boolean> => true,
+    /** Stop a mocked debug session. */
+    stopDebugging: async () : Promise<void> => undefined
 };
+
+/** Minimal URI implementation used by automation breakpoint tests. */
+export class Uri
+{
+    /** Create a URI from a file path. */
+    public static file(filePath : string) : Uri
+    {
+        return new Uri(filePath);
+    }
+
+    /** Store the path. */
+    private constructor(public readonly fsPath : string)
+    {
+    }
+
+    /** Return a stable string representation. */
+    public toString() : string
+    {
+        return "file://" + this.fsPath;
+    }
+}
+
+/** Minimal position implementation. */
+export class Position
+{
+    /** Store zero-based line and character. */
+    public constructor(public readonly line : number, public readonly character : number)
+    {
+    }
+}
+
+/** Minimal range implementation. */
+export class Range
+{
+    /** Store a start/end position. */
+    public constructor(public readonly start : Position, public readonly end : Position = start)
+    {
+    }
+}
+
+/** Minimal source location implementation. */
+export class Location
+{
+    /** Store a URI and normalized range. */
+    public constructor(public readonly uri : Uri, positionOrRange : Position | Range)
+    {
+        this.range = positionOrRange instanceof Range ? positionOrRange : new Range(positionOrRange);
+    }
+
+    public readonly range : Range;
+}
+
+/** Minimal source breakpoint implementation. */
+export class SourceBreakpoint
+{
+    /** Store breakpoint metadata. */
+    public constructor(public readonly location : Location, public readonly enabled : boolean = true, public readonly condition? : string, public readonly hitCondition? : string, public readonly logMessage? : string)
+    {
+    }
+}
 
 /** Mocked inline debug adapter descriptor. */
 export class DebugAdapterInlineImplementation

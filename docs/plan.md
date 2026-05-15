@@ -76,7 +76,18 @@
 - [x] Extend profiler/runtime-view tests to cover Qt runtimes that expose different profiler service combinations and verify start, stop, clear, and export behavior for each supported combination.
 - [x] Document the effective profiler backend requirements per Qt version and make the launch/configuration snippets reflect the validated combinations instead of relying on the current mixed defaults.
 
+## Phase 13: MCP and Automation Control Plane
+
+- [x] Add an explicit machine-facing control surface for debug sessions so AI/MCP clients can drive launch, attach, breakpoints, stack inspection, variable lookup, evaluate, inspector selection, and profiler export without depending on ad hoc VS Code-only command wiring.
+- [x] Define stable request/response schemas, capability negotiation, and deterministic error contracts for automation clients so unsupported Qt services and torn-down sessions fail predictably.
+- [x] Add end-to-end tests and documentation for AI-assisted debugging workflows, including multi-session targeting, teardown handling, and safe command sequencing.
+
+## Phase 14: Real-Qt Semantic Validation and Remaining Parity Gaps
+
+- [ ] Expand the Qt-backed integration harness from smoke checks to semantic assertions over inspector selection results, decoded object-tree contents, profiler export payloads, and runtime teardown/re-attach behavior.
+- [ ] Close the remaining high-value DAP parity gaps that still block Qt Creator-like workflows or AI-assisted edits, including mutable variable/expression flows, exception info, loaded-source reporting, and any other surfaced capabilities that are still advertised as unimplemented.
+- [ ] Replace the current transport-level profiler event classifier with a semantic Qt Creator timeline decoder once enough real fixture captures are available to validate the mapping.
+
 ## Follow-Up
 
-- Replace the current transport-level profiler event classifier with a semantic decoder for the Qt Creator timeline stream once more real fixture captures are available.
-- Expand the Qt-backed harness from launch smoke coverage to assertions over inspector selection, profiler export contents, and runtime teardown.
+- Broaden the machine-facing debug surface beyond inspector/profiler control once the initial MCP/API layer is in place, for example around source editing helpers, fixture orchestration, and richer runtime state queries.
