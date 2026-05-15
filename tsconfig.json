@@ -25,7 +25,6 @@
 		"inlineSourceMap": false,
 		"preserveConstEnums": true,
         "strictNullChecks": true,
-        "skipLibCheck": true,
 		"noUnusedParameters": false,
         "forceConsistentCasingInFileNames": true,
 
