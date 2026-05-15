@@ -612,15 +612,28 @@ describe("QmlDebugSession", () =>
     it("selects inspector objects by source location through QmlDebugger lookups", async () =>
     {
         const { session, qmlDebugger, inspector } = createSession();
+        session.setPathMappings({ "qrc:/project/qml": "/project/qml" });
 
         const response = session.callCustom("qml/inspector/selectBySource", { path: "/project/qml/Main.qml", line: 12, column: 3 });
         await Promise.resolve();
         await Promise.resolve();
 
         assert.strictEqual(qmlDebugger.objectLookupCalls.length, 1);
-        assert.deepStrictEqual(qmlDebugger.objectLookupCalls[0], { filename: "Main.qml", lineNumber: 12, columnNumber: 3 });
+        assert.deepStrictEqual(qmlDebugger.objectLookupCalls[0], { filename: "qrc:/project/qml/Main.qml", lineNumber: 12, columnNumber: 3 });
         assert.deepStrictEqual(response.body.matchedObjectIds, [ 41, 42 ]);
         assert.deepStrictEqual(inspector.currentObjectIds, [ 41, 42 ]);
+    });
+
+    it("preserves full source paths for inspector lookups when no qrc mapping exists", async () =>
+    {
+        const { session, qmlDebugger } = createSession();
+
+        session.callCustom("qml/inspector/selectBySource", { path: "/project/forms/Main.qml", line: 9, column: 4 });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(qmlDebugger.objectLookupCalls.length, 1);
+        assert.deepStrictEqual(qmlDebugger.objectLookupCalls[0], { filename: "/project/forms/Main.qml", lineNumber: 9, columnNumber: 4 });
     });
 
     it("returns decoded inspector object metadata for the active selection", async () =>

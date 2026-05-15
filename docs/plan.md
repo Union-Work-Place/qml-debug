@@ -66,9 +66,9 @@
 
 ## Phase 11: Source Lookup and Runtime View Fidelity
 
-- [ ] Preserve full normalized QML source paths for inspector source lookups instead of reducing requests to the basename, so duplicated `Main.qml`-style files in different `qrc:/` or filesystem roots cannot resolve to the wrong object tree.
-- [ ] Replace the single remembered QML session fallback in the runtime views with session-aware tracking that survives multiple concurrent sessions and termination of the last focused session.
-- [ ] Reduce passive one-second polling in the runtime views in favor of event-driven refresh where possible, and add regressions for session switching, termination, and duplicate-source-name inspector lookups.
+- [x] Preserve full normalized QML source paths for inspector source lookups instead of reducing requests to the basename, so duplicated `Main.qml`-style files in different `qrc:/` or filesystem roots cannot resolve to the wrong object tree.
+- [x] Replace the single remembered QML session fallback in the runtime views with session-aware tracking that survives multiple concurrent sessions and termination of the last focused session.
+- [x] Reduce passive one-second polling in the runtime views in favor of event-driven refresh where possible, and add regressions for session switching, termination, and duplicate-source-name inspector lookups.
 
 ## Phase 12: Profiler Capability Normalization and Compatibility
 

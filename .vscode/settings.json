@@ -6,5 +6,6 @@
         "out": true
     },
     "npm.packageManager": "npm",
-    "typescript.tsc.autoDetect": "off"
+    "typescript.tsc.autoDetect": "off",
+    "cmake.sourceDirectory": "/home/user/.local/share/qml-debug/test/qt-fixture"
 }

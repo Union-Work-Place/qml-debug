@@ -70,6 +70,19 @@ interface ProfilerExportResponse
     timeline : { timestamp : string; size : number; kind : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
 }
 
+/** Mutable runtime snapshot mirrored into the tree views. */
+interface RuntimeViewSnapshot
+{
+    /** Preferred QML debug session used for runtime requests. */
+    session? : vscode.DebugSession;
+    /** Last known inspector status for the preferred session. */
+    inspectorStatus? : InspectorStatusResponse;
+    /** Last known inspector object tree for the current selection. */
+    inspectorObjectTree? : InspectorObjectTreeResponse;
+    /** Last known profiler status for the preferred session. */
+    profilerStatus? : ProfilerStatusResponse;
+}
+
 /** Leaf tree item used by the inspector and profiler runtime views. */
 class RuntimeTreeItem extends vscode.TreeItem
 {
@@ -82,23 +95,91 @@ class RuntimeTreeItem extends vscode.TreeItem
     }
 }
 
-/** Most recent QML debug session seen by the extension when no active session is focused. */
-let trackedQmlSession : vscode.DebugSession | undefined;
-
-/** Return the active QML debug session, falling back to the last tracked one when needed. */
-async function getActiveQmlSession() : Promise<vscode.DebugSession | undefined>
+/** Session-aware tracker used by runtime views when multiple QML sessions exist. */
+export class QmlRuntimeSessionTracker
 {
-    const active = vscode.debug.activeDebugSession;
-    if (active?.type === "qml")
-        return active;
+    /** Known live QML sessions keyed by debug-session id. */
+    private readonly sessions = new Map<string, vscode.DebugSession>();
+    /** QML session ids in most-recently-relevant order. */
+    private sessionOrder : string[] = [];
+    /** Last focused QML session id, if any. */
+    private focusedSessionId? : string;
 
-    return trackedQmlSession;
+    /** Register a started QML debug session. */
+    public onSessionStarted(session : vscode.DebugSession) : void
+    {
+        if (session.type !== "qml")
+            return;
+
+        this.sessions.set(session.id, session);
+        this.promoteSession(session.id);
+        if (this.focusedSessionId === undefined)
+            this.focusedSessionId = session.id;
+    }
+
+    /** Register the newly focused session, if it is a QML debug session. */
+    public onActiveSessionChanged(session : vscode.DebugSession | undefined) : void
+    {
+        if (session?.type !== "qml")
+            return;
+
+        this.sessions.set(session.id, session);
+        this.promoteSession(session.id);
+        this.focusedSessionId = session.id;
+    }
+
+    /** Remove a terminated QML session and select the next fallback candidate. */
+    public onSessionTerminated(session : vscode.DebugSession) : void
+    {
+        if (!this.sessions.has(session.id))
+            return;
+
+        this.sessions.delete(session.id);
+        this.sessionOrder = this.sessionOrder.filter((value) : boolean => { return value !== session.id; });
+
+        if (this.focusedSessionId === session.id)
+            this.focusedSessionId = this.sessionOrder.length > 0 ? this.sessionOrder[0] : undefined;
+    }
+
+    /** Return the preferred active QML session using focus first and live-session fallback second. */
+    public getPreferredSession(activeSession : vscode.DebugSession | undefined) : vscode.DebugSession | undefined
+    {
+        if (activeSession?.type === "qml")
+        {
+            this.onActiveSessionChanged(activeSession);
+            return activeSession;
+        }
+
+        if (this.focusedSessionId !== undefined)
+        {
+            const focusedSession = this.sessions.get(this.focusedSessionId);
+            if (focusedSession !== undefined)
+                return focusedSession;
+        }
+
+        const fallbackSessionId = this.sessionOrder[0];
+        return fallbackSessionId === undefined ? undefined : this.sessions.get(fallbackSessionId);
+    }
+
+    /** Move one session id to the front of the fallback order. */
+    private promoteSession(sessionId : string) : void
+    {
+        this.sessionOrder = this.sessionOrder.filter((value) : boolean => { return value !== sessionId; });
+        this.sessionOrder.unshift(sessionId);
+    }
 }
 
-/** Execute a QML runtime request and suppress request failures for passive UI polling. */
-async function requestQmlRuntime<T>(command : string, args? : any) : Promise<T | undefined>
+/** Return true when runtime views still need a polling fallback for live state changes. */
+export function shouldPollRuntimeViews(inspectorStatus : InspectorStatusResponse | undefined, profilerStatus : ProfilerStatusResponse | undefined) : boolean
 {
-    const session = await getActiveQmlSession();
+    return (inspectorStatus?.enabled ?? false)
+        || ((inspectorStatus?.pendingRequestCount ?? 0) > 0)
+        || (profilerStatus?.recording ?? false);
+}
+
+/** Execute a QML runtime request against one concrete session and suppress passive refresh failures. */
+async function requestQmlRuntime<T>(session : vscode.DebugSession | undefined, command : string, args? : any) : Promise<T | undefined>
+{
     if (session === undefined)
         return undefined;
 
@@ -112,10 +193,9 @@ async function requestQmlRuntime<T>(command : string, args? : any) : Promise<T |
     }
 }
 
-/** Execute a QML runtime request and surface failures to command handlers. */
-async function requireQmlRuntime<T>(command : string, args? : any) : Promise<T>
+/** Execute a QML runtime request against one concrete session and surface failures to command handlers. */
+async function requireQmlRuntime<T>(session : vscode.DebugSession | undefined, command : string, args? : any) : Promise<T>
 {
-    const session = await getActiveQmlSession();
     if (session === undefined)
         throw new Error("No active QML debug session.");
 
@@ -159,39 +239,7 @@ class InspectorViewProvider implements vscode.TreeDataProvider<RuntimeTreeItem>
     /** Materialize the top-level inspector summary nodes. */
     public async getChildren(element? : RuntimeTreeItem) : Promise<RuntimeTreeItem[]>
     {
-        if (element !== undefined)
-            return [];
-
-        try
-        {
-            const status = await requestQmlRuntime<InspectorStatusResponse>("qml/inspector/status");
-            if (status === undefined)
-                return [ new RuntimeTreeItem("No active QML session") ];
-
-            const objectTree = status.available && status.currentObjectIds.length > 0
-                ? await requestQmlRuntime<InspectorObjectTreeResponse>("qml/inspector/objectTree", { objectIds: status.currentObjectIds })
-                : undefined;
-            const selectedObject = objectTree?.objects[0];
-
-            return [
-                new RuntimeTreeItem("Inspector service", status.available ? "available" : "unavailable"),
-                new RuntimeTreeItem("Interactive selection", status.enabled ? "enabled" : "disabled",
-                    { command: "qml-debug.toggleInspector", title: "Toggle Inspector" }),
-                new RuntimeTreeItem("Show app on top", status.showAppOnTop ? "on" : "off",
-                    { command: "qml-debug.toggleInspectorAppOnTop", title: "Toggle App On Top" }),
-                new RuntimeTreeItem("Selected object ids", status.currentObjectIds.length > 0 ? status.currentObjectIds.join(", ") : "none",
-                    { command: "qml-debug.inspectCurrentQmlItem", title: "Inspect Current QML Item" }),
-                new RuntimeTreeItem("Selected object", selectedObject === undefined ? "none" : selectedObject.className + " #" + selectedObject.debugId),
-                new RuntimeTreeItem("Selected object id", selectedObject?.idString || selectedObject?.name || "none"),
-                new RuntimeTreeItem("Selected object properties", selectedObject === undefined ? "0" : String(selectedObject.propertyCount)),
-                new RuntimeTreeItem("Contexts in selection", objectTree === undefined ? "0" : String(objectTree.contexts.length)),
-                new RuntimeTreeItem("Pending requests", String(status.pendingRequestCount))
-            ];
-        }
-        catch (error)
-        {
-            return [ new RuntimeTreeItem("Inspector data unavailable", String(error)) ];
-        }
+        return element === undefined ? [] : [];
     }
 }
 
@@ -218,34 +266,7 @@ class ProfilerViewProvider implements vscode.TreeDataProvider<RuntimeTreeItem>
     /** Materialize the top-level profiler summary nodes. */
     public async getChildren(element? : RuntimeTreeItem) : Promise<RuntimeTreeItem[]>
     {
-        if (element !== undefined)
-            return [];
-
-        try
-        {
-            const status = await requestQmlRuntime<ProfilerStatusResponse>("qml/profiler/status");
-            if (status === undefined)
-                return [ new RuntimeTreeItem("No active QML session") ];
-
-            return [
-                new RuntimeTreeItem("Profiler service", status.available ? "available" : "unavailable"),
-                new RuntimeTreeItem("Recording", status.recording ? "running" : "stopped",
-                    { command: status.recording ? "qml-debug.stopProfiler" : "qml-debug.startProfiler", title: "Toggle Profiler" }),
-                new RuntimeTreeItem("Requested features", status.requestedFeatures.length > 0 ? status.requestedFeatures.join(", ") : "none"),
-                new RuntimeTreeItem("Flush interval", status.flushInterval + " ms"),
-                new RuntimeTreeItem("Packets received", String(status.packetCount)),
-                new RuntimeTreeItem("Bytes received", String(status.receivedBytes)),
-                new RuntimeTreeItem("Timeline events", String(status.timelineEvents.length)),
-                new RuntimeTreeItem("Last event kind", status.timelineEvents.length > 0 ? status.timelineEvents[status.timelineEvents.length - 1].kind : "none"),
-                new RuntimeTreeItem("Last packet", status.lastPacketTimestamp ?? "none"),
-                new RuntimeTreeItem("Export snapshot", "open JSON",
-                    { command: "qml-debug.exportProfilerSnapshot", title: "Export Profiler Snapshot" })
-            ];
-        }
-        catch (error)
-        {
-            return [ new RuntimeTreeItem("Profiler data unavailable", String(error)) ];
-        }
+        return element === undefined ? [] : [];
     }
 }
 
@@ -254,20 +275,138 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
 {
     const inspectorProvider = new InspectorViewProvider();
     const profilerProvider = new ProfilerViewProvider();
-    const refreshAllViews = () : void =>
+    const sessionTracker = new QmlRuntimeSessionTracker();
+    const snapshot : RuntimeViewSnapshot = {};
+    let refreshTimer : NodeJS.Timeout | undefined;
+    let refreshInFlight : Promise<void> | undefined;
+    const updatePolling = () : void =>
+    {
+        const shouldPoll = snapshot.session !== undefined && shouldPollRuntimeViews(snapshot.inspectorStatus, snapshot.profilerStatus);
+        if (!shouldPoll)
+        {
+            if (refreshTimer !== undefined)
+            {
+                clearInterval(refreshTimer);
+                refreshTimer = undefined;
+            }
+            return;
+        }
+
+        if (refreshTimer !== undefined)
+            return;
+
+        refreshTimer = setInterval(() : void =>
+        {
+            void refreshAllViews();
+        }, 1000);
+    };
+    const refreshProviders = () : void =>
     {
         inspectorProvider.refresh();
         profilerProvider.refresh();
+    };
+    const refreshAllViews = async () : Promise<void> =>
+    {
+        if (refreshInFlight !== undefined)
+            return refreshInFlight;
+
+        refreshInFlight = (async () : Promise<void> =>
+        {
+            snapshot.session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+
+            if (snapshot.session === undefined)
+            {
+                snapshot.inspectorStatus = undefined;
+                snapshot.inspectorObjectTree = undefined;
+                snapshot.profilerStatus = undefined;
+                updatePolling();
+                refreshProviders();
+                return;
+            }
+
+            snapshot.inspectorStatus = await requestQmlRuntime<InspectorStatusResponse>(snapshot.session, "qml/inspector/status");
+            snapshot.profilerStatus = await requestQmlRuntime<ProfilerStatusResponse>(snapshot.session, "qml/profiler/status");
+
+            snapshot.inspectorObjectTree = snapshot.inspectorStatus?.available && snapshot.inspectorStatus.currentObjectIds.length > 0
+                ? await requestQmlRuntime<InspectorObjectTreeResponse>(snapshot.session, "qml/inspector/objectTree", { objectIds: snapshot.inspectorStatus.currentObjectIds })
+                : undefined;
+
+            updatePolling();
+            refreshProviders();
+        })().finally(() : void =>
+        {
+            refreshInFlight = undefined;
+        });
+
+        return refreshInFlight;
+    };
+
+    inspectorProvider.getChildren = async (element? : RuntimeTreeItem) : Promise<RuntimeTreeItem[]> =>
+    {
+        if (element !== undefined)
+            return [];
+
+        if (snapshot.session === undefined)
+            return [ new RuntimeTreeItem("No active QML session") ];
+
+        const status = snapshot.inspectorStatus;
+        if (status === undefined)
+            return [ new RuntimeTreeItem("Inspector data unavailable") ];
+
+        const selectedObject = snapshot.inspectorObjectTree?.objects[0];
+        return [
+            new RuntimeTreeItem("Inspector service", status.available ? "available" : "unavailable"),
+            new RuntimeTreeItem("Interactive selection", status.enabled ? "enabled" : "disabled",
+                { command: "qml-debug.toggleInspector", title: "Toggle Inspector" }),
+            new RuntimeTreeItem("Show app on top", status.showAppOnTop ? "on" : "off",
+                { command: "qml-debug.toggleInspectorAppOnTop", title: "Toggle App On Top" }),
+            new RuntimeTreeItem("Selected object ids", status.currentObjectIds.length > 0 ? status.currentObjectIds.join(", ") : "none",
+                { command: "qml-debug.inspectCurrentQmlItem", title: "Inspect Current QML Item" }),
+            new RuntimeTreeItem("Selected object", selectedObject === undefined ? "none" : selectedObject.className + " #" + selectedObject.debugId),
+            new RuntimeTreeItem("Selected object id", selectedObject?.idString || selectedObject?.name || "none"),
+            new RuntimeTreeItem("Selected object properties", selectedObject === undefined ? "0" : String(selectedObject.propertyCount)),
+            new RuntimeTreeItem("Contexts in selection", snapshot.inspectorObjectTree === undefined ? "0" : String(snapshot.inspectorObjectTree.contexts.length)),
+            new RuntimeTreeItem("Pending requests", String(status.pendingRequestCount))
+        ];
+    };
+
+    profilerProvider.getChildren = async (element? : RuntimeTreeItem) : Promise<RuntimeTreeItem[]> =>
+    {
+        if (element !== undefined)
+            return [];
+
+        if (snapshot.session === undefined)
+            return [ new RuntimeTreeItem("No active QML session") ];
+
+        const status = snapshot.profilerStatus;
+        if (status === undefined)
+            return [ new RuntimeTreeItem("Profiler data unavailable") ];
+
+        return [
+            new RuntimeTreeItem("Profiler service", status.available ? "available" : "unavailable"),
+            new RuntimeTreeItem("Recording", status.recording ? "running" : "stopped",
+                { command: status.recording ? "qml-debug.stopProfiler" : "qml-debug.startProfiler", title: "Toggle Profiler" }),
+            new RuntimeTreeItem("Requested features", status.requestedFeatures.length > 0 ? status.requestedFeatures.join(", ") : "none"),
+            new RuntimeTreeItem("Flush interval", status.flushInterval + " ms"),
+            new RuntimeTreeItem("Packets received", String(status.packetCount)),
+            new RuntimeTreeItem("Bytes received", String(status.receivedBytes)),
+            new RuntimeTreeItem("Timeline events", String(status.timelineEvents.length)),
+            new RuntimeTreeItem("Last event kind", status.timelineEvents.length > 0 ? status.timelineEvents[status.timelineEvents.length - 1].kind : "none"),
+            new RuntimeTreeItem("Last packet", status.lastPacketTimestamp ?? "none"),
+            new RuntimeTreeItem("Export snapshot", "open JSON",
+                { command: "qml-debug.exportProfilerSnapshot", title: "Export Profiler Snapshot" })
+        ];
     };
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider("qml-debug.inspector", inspectorProvider),
         vscode.window.registerTreeDataProvider("qml-debug.profiler", profilerProvider),
-        vscode.commands.registerCommand("qml-debug.refreshRuntimeTools", refreshAllViews),
+        vscode.commands.registerCommand("qml-debug.refreshRuntimeTools", () : Thenable<void> => refreshAllViews()),
         vscode.commands.registerCommand("qml-debug.inspectCurrentQmlItem", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
                 const editor = vscode.window.activeTextEditor;
                 if (editor === undefined)
                     throw new Error("Open a QML source file before selecting an item in the inspector.");
@@ -276,68 +415,74 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
                 if (document.uri.scheme !== "file")
                     throw new Error("The inspector source lookup only supports filesystem-backed QML documents.");
 
-                await requireQmlRuntime("qml/inspector/selectBySource",
+                await requireQmlRuntime(session, "qml/inspector/selectBySource",
                     {
                         path: document.fileName,
                         line: editor.selection.active.line + 1,
                         column: editor.selection.active.character + 1
                     }
                 );
-                refreshAllViews();
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.toggleInspector", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                const status = await requireQmlRuntime<InspectorStatusResponse>("qml/inspector/status");
-                await requireQmlRuntime("qml/inspector/setEnabled", { enabled: !status.enabled });
-                refreshAllViews();
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                const status = await requireQmlRuntime<InspectorStatusResponse>(session, "qml/inspector/status");
+                await requireQmlRuntime(session, "qml/inspector/setEnabled", { enabled: !status.enabled });
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.toggleInspectorAppOnTop", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                const status = await requireQmlRuntime<InspectorStatusResponse>("qml/inspector/status");
-                await requireQmlRuntime("qml/inspector/setShowAppOnTop", { showAppOnTop: !status.showAppOnTop });
-                refreshAllViews();
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                const status = await requireQmlRuntime<InspectorStatusResponse>(session, "qml/inspector/status");
+                await requireQmlRuntime(session, "qml/inspector/setShowAppOnTop", { showAppOnTop: !status.showAppOnTop });
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.startProfiler", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                await requireQmlRuntime("qml/profiler/start",
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                await requireQmlRuntime(session, "qml/profiler/start",
                     {
                         featureMask: DEFAULT_PROFILER_FEATURE_MASK.toString(),
                         flushInterval: 250
                     }
                 );
-                refreshAllViews();
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.stopProfiler", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                await requireQmlRuntime("qml/profiler/stop");
-                refreshAllViews();
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                await requireQmlRuntime(session, "qml/profiler/stop");
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.clearProfiler", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                await requireQmlRuntime("qml/profiler/clear");
-                refreshAllViews();
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                await requireQmlRuntime(session, "qml/profiler/clear");
+                await refreshAllViews();
             });
         }),
         vscode.commands.registerCommand("qml-debug.exportProfilerSnapshot", async () : Promise<void> =>
         {
             await withRuntimeErrors(async () : Promise<void> =>
             {
-                const status = await requireQmlRuntime<ProfilerExportResponse>("qml/profiler/export");
+                const session = sessionTracker.getPreferredSession(vscode.debug.activeDebugSession);
+                const status = await requireQmlRuntime<ProfilerExportResponse>(session, "qml/profiler/export");
                 const document = await vscode.workspace.openTextDocument(
                     {
                         language: "json",
@@ -349,28 +494,25 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
         }),
         vscode.debug.onDidStartDebugSession((session : vscode.DebugSession) : void =>
         {
-            if (session.type === "qml")
-                trackedQmlSession = session;
-            refreshAllViews();
+            sessionTracker.onSessionStarted(session);
+            void refreshAllViews();
         }),
         vscode.debug.onDidTerminateDebugSession((session : vscode.DebugSession) : void =>
         {
-            if (trackedQmlSession?.id === session.id)
-                trackedQmlSession = undefined;
-            refreshAllViews();
+            sessionTracker.onSessionTerminated(session);
+            void refreshAllViews();
         }),
         vscode.debug.onDidChangeActiveDebugSession((session : vscode.DebugSession | undefined) : void =>
         {
-            if (session?.type === "qml")
-                trackedQmlSession = session;
-            refreshAllViews();
+            sessionTracker.onActiveSessionChanged(session);
+            void refreshAllViews();
         }),
         new vscode.Disposable(() : void =>
         {
-            clearInterval(refreshTimer);
+            if (refreshTimer !== undefined)
+                clearInterval(refreshTimer);
         })
     );
 
-    const refreshTimer = setInterval(() : void => { refreshAllViews(); }, 1000);
-    refreshAllViews();
+    void refreshAllViews();
 }

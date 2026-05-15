@@ -447,11 +447,13 @@ export class QmlDebugSession extends LoggingDebugSession
         return false;
     }
 
-    private extractInspectorFilename(filename : string) : string
+    private mapInspectorSourcePath(filename : string) : string
     {
-        const normalized = this.mapPathTo(filename).replace(/\\/g, "/");
-        const lastSlash = normalized.lastIndexOf("/");
-        return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+        const mappedPath = this.mapPathTo(filename);
+        if (mappedPath !== path.parse(normalizeSourcePath(filename)).base)
+            return mappedPath.replace(/\\/g, "/");
+
+        return normalizeSourcePath(filename);
     }
 
     private getInspectorStatusResponse() : QmlInspectorSnapshot & { available : boolean }
@@ -547,7 +549,7 @@ export class QmlDebugSession extends LoggingDebugSession
             const lineNumber = typeof args?.line === "number" ? args.line : 1;
             const columnNumber = typeof args?.column === "number" ? args.column : 1;
             const matches = await this.qmlDebugger.requestObjectsForLocation(
-                this.extractInspectorFilename(filename),
+                this.mapInspectorSourcePath(filename),
                 lineNumber,
                 columnNumber
             );
