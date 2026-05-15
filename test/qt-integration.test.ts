@@ -135,24 +135,68 @@ async function waitForCapturedResponse(session : IntegrationSession, response : 
     throw new Error("Timed out waiting for custom request response: " + response.command);
 }
 
+/** Derive stable source lookup candidates from the current fixture file contents. */
+function collectFixtureSourceCandidates(filePath : string, markers : string[]) : Array<{ path : string; line : number; column : number }>
+{
+    const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/u);
+    const candidates : Array<{ path : string; line : number; column : number }> = [
+        { path: filePath, line: 1, column: 1 }
+    ];
+    const seen = new Set<string>([ filePath + ":1:1" ]);
+
+    for (const marker of markers)
+    {
+        const lineIndex = lines.findIndex((line) : boolean => { return line.includes(marker); });
+        if (lineIndex < 0)
+            continue;
+
+        const columnIndex = lines[lineIndex].indexOf(marker);
+        const derived = [
+            { path: filePath, line: lineIndex + 1, column: 1 },
+            { path: filePath, line: lineIndex + 1, column: columnIndex + 1 }
+        ];
+
+        for (const candidate of derived)
+        {
+            const key = candidate.path + ":" + candidate.line + ":" + candidate.column;
+            if (seen.has(key))
+                continue;
+
+            seen.add(key);
+            candidates.push(candidate);
+        }
+    }
+
+    return candidates;
+}
+
 /** Select a known fixture object using one of several stable source coordinates. */
 async function selectKnownFixtureObject(session : IntegrationSession, fixture : QtFixtureConfiguration) : Promise<DebugProtocol.Response>
 {
+    const mainQmlPath = path.join(fixture.qmlPath, "Main.qml");
+    const fixturePanelPath = path.join(fixture.qmlPath, "components", "FixturePanel.qml");
     const candidates = [
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 0, column: 0 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 1, column: 1 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 6, column: 1 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 49, column: 9 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 50, column: 9 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 56, column: 9 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 72, column: 9 },
-        { path: path.join(fixture.qmlPath, "Main.qml"), line: 75, column: 9 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 0, column: 0 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 1, column: 1 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 3, column: 1 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 11, column: 5 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 15, column: 5 },
-        { path: path.join(fixture.qmlPath, "components", "FixturePanel.qml"), line: 2, column: 0 }
+        ...collectFixtureSourceCandidates(mainQmlPath, [
+            "Window {",
+            "ListModel {",
+            "Timer {",
+            "Column {",
+            "Text {",
+            "FixturePanel {",
+            'objectName: "inspectorTarget"',
+            "Repeater {",
+            "FixtureDelegate {",
+            "Canvas {",
+            'objectName: "graphCanvas"'
+        ]),
+        ...collectFixtureSourceCandidates(fixturePanelPath, [
+            "Rectangle {",
+            'objectName: "fixturePanel"',
+            'objectName: "fixturePanelTitle"',
+            'objectName: "fixturePanelDetail"',
+            'objectName: "fixturePanelAccent"',
+            "MouseArea {"
+        ])
     ];
 
     let lastResponse : DebugProtocol.Response | undefined;
