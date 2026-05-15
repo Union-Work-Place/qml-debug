@@ -470,6 +470,25 @@ export class QmlDebugSession extends LoggingDebugSession
         };
     }
 
+    /** Tear down any partially initialized transport state after attach, launch, or disconnect failures. */
+    private async cleanupConnection(stopLaunchedProcess : boolean) : Promise<void>
+    {
+        this.debuggerConnected = false;
+
+        await this.v8debugger.deinitialize().catch(() : void => undefined);
+        await this.profiler.deinitialize().catch(() : void => undefined);
+        await this.inspector.deinitialize().catch(() : void => undefined);
+        await this.qmlDebugger.deinitialize().catch(() : void => undefined);
+        await this.declarativeDebugClient.deinitialize().catch(() : void => undefined);
+        await this.packetManager.disconnect().catch(() : void => undefined);
+
+        if (stopLaunchedProcess && this.launchedProcess !== undefined && !this.launchedProcess.killed)
+            this.launchedProcess.kill();
+
+        if (stopLaunchedProcess)
+            this.launchedProcess = undefined;
+    }
+
     private async handleCustomRequest(command : string, response : DebugProtocol.Response, args : any) : Promise<void>
     {
         if (command === "qml/getCapabilities")
@@ -822,6 +841,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
+            await this.cleanupConnection(true);
             this.raiseError(response, 1003, "Cannot launch QML debuggee. Program: " + args.program + ". " + error);
             return;
         }
@@ -856,6 +876,7 @@ export class QmlDebugSession extends LoggingDebugSession
         }
         catch (error)
         {
+            await this.cleanupConnection(false);
             this.raiseError(response, 1002, "Cannot connect to Qml debugger. \n\tHost: " + this.packetManager.host + "\n\tPort:" + this.packetManager.port + "\n\t" + error);
             return;
         }
@@ -865,28 +886,10 @@ export class QmlDebugSession extends LoggingDebugSession
 
     protected async disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): Promise<void>
     {
-        try
-        {
-            await this.v8debugger.requestContinue();
-            await this.v8debugger.disconnect();
-            await this.v8debugger.deinitialize();
-            await this.profiler.deinitialize();
-            await this.inspector.deinitialize();
-            await this.qmlDebugger.deinitialize();
-            await this.declarativeDebugClient.deinitialize();
-            await this.packetManager.disconnect();
-            this.debuggerConnected = false;
-
-            if (this.launchedProcess !== undefined && !this.launchedProcess.killed)
-                this.launchedProcess.kill();
-
-            this.sendResponse(response);
-        }
-        catch (error)
-        {
-            this.failRequest(response, 1004, "Cannot disconnect from Qml debugger. \n\tHost: " + this.packetManager.host + "\n\tPort:" + this.packetManager.port + ", " + error);
-            return;
-        }
+        await this.v8debugger.requestContinue().catch(() : void => undefined);
+        await this.v8debugger.disconnect().catch(() : void => undefined);
+        await this.cleanupConnection(true);
+        this.sendResponse(response);
     }
 
     protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments, request?: DebugProtocol.Request): Promise<void>

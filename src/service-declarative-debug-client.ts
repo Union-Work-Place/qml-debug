@@ -2,8 +2,6 @@ import Log from "@qml-debug/log";
 import Packet from "@qml-debug/packet";
 import { QmlDebugSession } from "@qml-debug/debug-adapter";
 
-import { TerminatedEvent } from "@vscode/debugadapter";
-
 
 /** One Qt debug service announced during the declarative handshake. */
 export interface NegotiatedQtDebugService
@@ -32,7 +30,9 @@ export default class ServiceDeclarativeDebugClient
     /** Owning debug session used for transport access. */
     private session? : QmlDebugSession;
     /** Promise resolver for the active handshake, if any. */
-    private handshakeResolve : any;
+    private handshakeResolve? : () => void;
+    /** Promise reject callback for the active handshake, if any. */
+    private handshakeReject? : (error : Error) => void;
     /** Timeout guard for the active handshake. */
     private handshakeResolveTimeout? : NodeJS.Timeout;
     /** Last negotiated capability snapshot. */
@@ -42,31 +42,102 @@ export default class ServiceDeclarativeDebugClient
         services: []
     };
 
+    /** Return true while a declarative handshake is in progress. */
+    private isHandshakePending() : boolean
+    {
+        return this.handshakeResolve !== undefined || this.handshakeReject !== undefined;
+    }
+
+    /** Reset the negotiated capability snapshot to an empty state. */
+    private resetCapabilities() : void
+    {
+        this.capabilities = {
+            protocolVersion: 0,
+            dataStreamVersion: 0,
+            services: []
+        };
+    }
+
+    /** Resolve the active handshake and clear its timeout bookkeeping. */
+    private resolveHandshake() : void
+    {
+        if (this.handshakeResolveTimeout !== undefined)
+        {
+            clearTimeout(this.handshakeResolveTimeout);
+            this.handshakeResolveTimeout = undefined;
+        }
+
+        const resolve = this.handshakeResolve;
+        this.handshakeResolve = undefined;
+        this.handshakeReject = undefined;
+        resolve?.();
+    }
+
+    /** Reject the active handshake and optionally close the underlying transport. */
+    private failHandshake(error : Error, disconnectTransport : boolean = false) : void
+    {
+        if (this.handshakeResolveTimeout !== undefined)
+        {
+            clearTimeout(this.handshakeResolveTimeout);
+            this.handshakeResolveTimeout = undefined;
+        }
+
+        const reject = this.handshakeReject;
+        this.handshakeResolve = undefined;
+        this.handshakeReject = undefined;
+        reject?.(error);
+
+        if (disconnectTransport)
+            this.session?.packetManager?.disconnect().catch(() : void => undefined);
+    }
+
+    /** Throw when a required Qt debug service is missing from the handshake response. */
+    private ensureRequiredServices(services : NegotiatedQtDebugService[]) : void
+    {
+        const requiredServices = [ "V8Debugger", "QmlDebugger" ];
+        const missingServices = requiredServices.filter((name) : boolean =>
+        {
+            return !services.some((service) : boolean => { return service.name === name; });
+        });
+
+        if (missingServices.length > 0)
+        {
+            throw new Error("Required debugger service" + (missingServices.length > 1 ? "s" : "") + " not found on debug server. Service Name" + (missingServices.length > 1 ? "s" : "") + ": " + missingServices.join(", "));
+        }
+    }
+
     /** Decode the declarative handshake response and update local capabilities. */
     private packetReceived(packet: Packet): void
     {
         Log.trace("ServiceDeclarativeDebugClient.packetReceived", []);
 
-        const op = packet.readInt32BE();
-        if (op === 0)
+        try
         {
-            clearTimeout(this.handshakeResolveTimeout!);
+            const op = packet.readInt32BE();
+            if (op !== 0)
+                throw new Error("Unknown QDeclarativeDebugClient operation. Received Operation: " + op);
 
             const protocolVersion = packet.readUInt32BE();
             const plugins = packet.readArray(Packet.prototype.readStringUTF16);
             const pluginVersions = packet.readArray(Packet.prototype.readDouble);
             const datastreamVersion = packet.readUInt32BE();
 
+            if (plugins.length !== pluginVersions.length)
+                throw new Error("Malformed QDeclarativeDebugClient handshake response. Plugin and version counts do not match.");
+
+            const services = plugins.map<NegotiatedQtDebugService>((plugin, index) =>
+            {
+                return {
+                    name: plugin,
+                    version: pluginVersions[index]
+                };
+            });
+
+            this.ensureRequiredServices(services);
             this.capabilities = {
                 protocolVersion: protocolVersion,
                 dataStreamVersion: datastreamVersion,
-                services: plugins.map<NegotiatedQtDebugService>((plugin, index) =>
-                {
-                    return {
-                        name: plugin,
-                        version: pluginVersions[index] ?? 0
-                    };
-                })
+                services: services
             };
 
             Log.detail(
@@ -93,50 +164,27 @@ export default class ServiceDeclarativeDebugClient
             if (datastreamVersion !== 12)
                 Log.warning("Unknown data stream version. Received Data Stream Version: " + datastreamVersion);
 
-            let debugMessagesFound = false;
-            let v8DebuggerFound = false;
-            let qmlDebugerFound = false;
-            for (let i = 0; i < plugins.length; i++)
-            {
-                const currentPlugin = plugins[i];
-                if (currentPlugin === "DebugMessages")
-                    debugMessagesFound = true;
-                else if (currentPlugin === "V8Debugger")
-                    v8DebuggerFound = true;
-                else if (currentPlugin === "QmlDebugger")
-                    qmlDebugerFound = true;
-            }
-
-            if (!v8DebuggerFound)
-            {
-                Log.error("Required debugger service not found on debug server. Service Name: V8Debugger");
-                Log.warning("You must enable necessary debug services by enabling them in -qmljsdebugger command line arguments. For example; ./your-application -qmljsdebugger=host:localhost,port:10222,services:DebugMessages,QmlDebugger,V8Debugger");
-
-                this.session!.sendEvent(new TerminatedEvent());
-                this.session!.packetManager!.disconnect();
-            }
-
-            if (!qmlDebugerFound)
-            {
-                Log.error("Required debugger service not found on debug server. Service Name: QmlDebugger.");
-                Log.warning("You must enable necessary debug services by enabling them in -qmljsdebugger command line arguments. For example; ./your-application -qmljsdebugger=host:localhost,port:10222,services:DebugMessages,QmlDebugger,V8Debugger");
-
-                //this.session?.sendEvent(new TerminatedEvent());
-                // this.packetManager!.disconnect();
-            }
-
+            const debugMessagesFound = services.some((service) : boolean => { return service.name === "DebugMessages"; });
             if (!debugMessagesFound)
             {
                 Log.warning("Supported but optional debugger service not found on debug server. Service Name: DebugMessage");
                 Log.info("You can enable optional debug services by enabling them in -qmljsdebugger command line arguments. For example; ./your-application -qmljsdebugger=host:localhost,port:10222,services:DebugMessages,QmlDebugger,V8Debugger");
             }
-        }
-        else
-        {
-            Log.error("Unknown QDeclarativeDebugClient operation. Received Operation: " + op);
-        }
 
-        this.handshakeResolve();
+            this.resolveHandshake();
+        }
+        catch (error)
+        {
+            this.resetCapabilities();
+
+            const handshakeError = error instanceof Error ? error : new Error(String(error));
+            Log.error(handshakeError.message);
+
+            if (!this.isHandshakePending())
+                return;
+
+            this.failHandshake(handshakeError, true);
+        }
     }
 
     /** Return a defensive copy of the last negotiated capability snapshot. */
@@ -184,15 +232,19 @@ export default class ServiceDeclarativeDebugClient
         await new Promise<void>((resolve, reject) =>
         {
             this.handshakeResolve = resolve;
+            this.handshakeReject = reject;
             this.handshakeResolveTimeout = setTimeout(
                 () =>
                 {
-                    reject(new Error("Handshake with QDeclarativeDebugging Service has been timedout."));
+                    this.failHandshake(new Error("Handshake with QDeclarativeDebugging Service has been timed out."));
                 },
                 1000
             );
 
-            this.session!.packetManager?.writePacket(packet).catch(reject);
+            this.session!.packetManager?.writePacket(packet).catch((error) =>
+            {
+                this.failHandshake(error instanceof Error ? error : new Error(String(error)));
+            });
         });
     }
 
@@ -201,11 +253,8 @@ export default class ServiceDeclarativeDebugClient
     {
         Log.trace("ServiceDeclarativeDebugClient.initialize", []);
 
-        this.capabilities = {
-            protocolVersion: 0,
-            dataStreamVersion: 0,
-            services: []
-        };
+        this.failHandshake(new Error("QDeclarativeDebugClient service reinitialized."));
+        this.resetCapabilities();
 
     }
 
@@ -214,11 +263,8 @@ export default class ServiceDeclarativeDebugClient
     {
         Log.trace("ServiceDeclarativeDebugClient.deinitialize", []);
 
-        this.capabilities = {
-            protocolVersion: 0,
-            dataStreamVersion: 0,
-            services: []
-        };
+        this.failHandshake(new Error("QDeclarativeDebugClient service disconnected."));
+        this.resetCapabilities();
 
     }
 
@@ -228,6 +274,13 @@ export default class ServiceDeclarativeDebugClient
         Log.trace("ServiceDeclarativeDebugClient.constructor", [ session ]);
 
         this.session = session;
+        this.session.packetManager.registerTransportCloseHandler((error : Error) : void =>
+        {
+            if (!this.isHandshakePending())
+                return;
+
+            this.failHandshake(new Error("QDeclarativeDebugClient transport closed. " + error.message));
+        });
         this.session.packetManager.registerHandler("QDeclarativeDebugClient",
             (header, packet) : boolean =>
             {

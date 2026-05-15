@@ -10,6 +10,7 @@ import { TerminalColor } from "terminal-styler";
 
 
 type PacketHandlerCallback = (header : string, data : Packet) => boolean;
+type TransportCloseHandler = (error : Error) => void;
 
 /** Registered packet callback for a Qt debug service header. */
 export interface PacketHandler
@@ -33,6 +34,8 @@ export default class PacketManager
     private receiveBuffer = Buffer.alloc(0);
     /** Packet handlers registered by individual Qt debug service wrappers. */
     private packetHandlers : PacketHandler[] = [];
+    /** Callbacks notified when the transport closes or errors. */
+    private transportCloseHandlers : TransportCloseHandler[] = [];
 
     /** Target debug server host. */
     public host = "localhost";
@@ -66,6 +69,8 @@ export default class PacketManager
     {
         Log.trace("PacketManager.onClose", []);
 
+        this.notifyTransportClosed(new Error("Connection closed."));
+
         this.session?.sendEvent(new TerminatedEvent());
 
         Log.warning("Connection closed.");
@@ -76,7 +81,26 @@ export default class PacketManager
     {
         Log.trace("PacketManager.onError", [ err ]);
 
-        Log.error("Socket Error - " + err);
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.notifyTransportClosed(error);
+
+        Log.error("Socket Error - " + error);
+    }
+
+    /** Notify registered transport listeners that the socket can no longer carry requests. */
+    private notifyTransportClosed(error : Error) : void
+    {
+        for (const current of this.transportCloseHandlers)
+        {
+            try
+            {
+                current(error);
+            }
+            catch (handlerError)
+            {
+                Log.error("PacketManager transport-close handler failed. " + handlerError);
+            }
+        }
     }
 
     /** Open the TCP connection to the Qt QML debug server. */
@@ -105,13 +129,20 @@ export default class PacketManager
 
         Log.info("Disconnecting from " + this.host + ":" + this.port + "...");
 
-        await this.socket.end();
+        try
+        {
+            await this.socket.end();
+        }
+        finally
+        {
+            this.notifyTransportClosed(new Error("Connection disconnected."));
 
-        this.socket.destroy();
-        this.socket = null;
+            this.socket.destroy();
+            this.socket = null;
 
-        this.nodeSocket?.destroy();
-        this.nodeSocket = null;
+            this.nodeSocket?.destroy();
+            this.nodeSocket = null;
+        }
 
         Log.success("Disconnected.");
     }
@@ -122,6 +153,14 @@ export default class PacketManager
         Log.trace("PacketManager.registerHandler", [ header, callback ]);
 
         this.packetHandlers.push({ name: header, callback: callback });
+    }
+
+    /** Register a callback that runs when the transport closes or errors. */
+    public registerTransportCloseHandler(callback : TransportCloseHandler) : void
+    {
+        Log.trace("PacketManager.registerTransportCloseHandler", [ callback ]);
+
+        this.transportCloseHandlers.push(callback);
     }
 
     /** Dispatch a decoded packet to the first matching service handler. */

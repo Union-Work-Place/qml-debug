@@ -105,6 +105,34 @@ export default class ServiceQmlDebugger
     /** Outstanding asynchronous requests awaiting a Qt reply. */
     public awaitingRequests : ServiceAwaitingRequest[] = [];
 
+    /** Remove one pending request and cancel its timeout guard. */
+    private finishRequest(seqId : number) : ServiceAwaitingRequest | undefined
+    {
+        for (let index = 0; index < this.awaitingRequests.length; index++)
+        {
+            const current = this.awaitingRequests[index];
+            if (current.seqId !== seqId)
+                continue;
+
+            clearTimeout(current.timerId);
+            this.awaitingRequests.splice(index, 1);
+            return current;
+        }
+
+        return undefined;
+    }
+
+    /** Reject every pending request because the transport is no longer usable. */
+    private rejectAwaitingRequests(error : Error) : void
+    {
+        while (this.awaitingRequests.length > 0)
+        {
+            const current = this.awaitingRequests.shift()!;
+            clearTimeout(current.timerId);
+            current.reject(error);
+        }
+    }
+
     /** Request the list of active QML engines from the runtime. */
     public async requestListEngines() : Promise<QmlEngine[]>
     {
@@ -326,16 +354,11 @@ export default class ServiceQmlDebugger
         }
         else
         {
-            for (let i = 0; i < this.awaitingRequests.length; i++)
+            const current = this.finishRequest(seqId);
+            if (current !== undefined)
             {
-                const current = this.awaitingRequests[i];
-                if (current.seqId === seqId)
-                {
-                    this.awaitingRequests.splice(i, 1);
-                    clearTimeout(current.timerId);
-                    current.resolve(packet);
-                    return;
-                }
+                current.resolve(packet);
+                return;
             }
 
             Log.error("Packet with wrong sequence id received. Sequence Id: " + seqId + ", " + operation +  "Operation: ");
@@ -369,7 +392,9 @@ export default class ServiceQmlDebugger
                 const timerId = setTimeout(
                     () =>
                     {
-                        reject(new Error("Request timed out. Sequence Id: " + seqId));
+                        const current = this.finishRequest(seqId);
+                        if (current !== undefined)
+                            current.reject(new Error("QmlDebugger request timed out. Sequence Id: " + seqId));
                     },
                     10000
                 );
@@ -383,7 +408,12 @@ export default class ServiceQmlDebugger
                     }
                 );
 
-                this.session!.packetManager!.writePacket(envelopPacket);
+                this.session!.packetManager!.writePacket(envelopPacket).catch((error) =>
+                {
+                    const current = this.finishRequest(seqId);
+                    if (current !== undefined)
+                        current.reject(error instanceof Error ? error : new Error(String(error)));
+                });
             }
         );
     }
@@ -396,6 +426,9 @@ export default class ServiceQmlDebugger
     public async deinitialize() : Promise<void>
     {
         Log.trace("ServiceQmlDebugger.deinitialize", []);
+
+        this.rejectAwaitingRequests(new Error("QmlDebugger service disconnected."));
+        this.seqId = 0;
     }
 
     public constructor(session : QmlDebugSession)
@@ -403,6 +436,10 @@ export default class ServiceQmlDebugger
         Log.trace("ServiceQmlDebugger.constructor", [ session ]);
 
         this.session = session;
+        this.session.packetManager.registerTransportCloseHandler((error : Error) : void =>
+        {
+            this.rejectAwaitingRequests(new Error("QmlDebugger transport closed. " + error.message));
+        });
         this.session.packetManager.registerHandler("QmlDebugger",
             (header, packet) : boolean =>
             {

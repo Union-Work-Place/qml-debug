@@ -81,6 +81,37 @@ export default class ServiceV8Debugger
     /** Request timeout in milliseconds. */
     private requestTimeOut = 600000;
 
+    /** Remove one pending connect request and cancel its timeout guard. */
+    private finishConnectRequest() : ServiceAwaitingRequest | undefined
+    {
+        if (this.connectRequest === undefined)
+            return undefined;
+
+        const current = this.connectRequest;
+        clearTimeout(current.timeoutId);
+        this.connectRequest = undefined;
+        return current;
+    }
+
+    /** Reject the active transport-level connect request, if any. */
+    private rejectConnectRequest(error : Error) : void
+    {
+        const current = this.finishConnectRequest();
+        if (current !== undefined)
+            current.reject(error);
+    }
+
+    /** Reject every pending request because the V8 transport is no longer usable. */
+    private rejectAwaitingRequests(error : Error) : void
+    {
+        while (this.awaitingRequests.length > 0)
+        {
+            const current = this.awaitingRequests.shift()!;
+            clearTimeout(current.timeoutId);
+            current.reject(error);
+        }
+    }
+
     /** Decode incoming V8 packets and dispatch responses or events. */
     private packetReceived(packet : Packet)
     {
@@ -116,7 +147,10 @@ export default class ServiceV8Debugger
                     this.finishOrCancelRequest(current.seqId);
 
                     if (current.autoReject && !message.success)
+                    {
                         current.reject(new Error("V8Debugger: Command failed. Sequence Number: " + message.request_seq + ", Command: " + message.command));
+                        return;
+                    }
 
                     if (message.success && !current.responseCheckFunction(message))
                     {
@@ -141,11 +175,11 @@ export default class ServiceV8Debugger
         }
         else if (operation === "connect")
         {
-            if (this.connectRequest === undefined)
+            const connectRequest = this.finishConnectRequest();
+            if (connectRequest === undefined)
                 return;
 
-            clearTimeout(this.connectRequest.timeoutId);
-            this.connectRequest.resolve();
+            connectRequest.resolve();
         }
     }
 
@@ -192,8 +226,9 @@ export default class ServiceV8Debugger
                 const tId = setTimeout(
                     () =>
                     {
-                        this.finishOrCancelRequest(seq);
-                        rejectParam(new Error("V8Debugger: Request timed out. Sequence Id: " + seq));
+                        const current = this.finishOrCancelRequest(seq);
+                        if (current !== undefined)
+                            current.reject(new Error("V8Debugger: Request timed out. Sequence Id: " + seq));
                     },
                     this.requestTimeOut
                 );
@@ -211,15 +246,16 @@ export default class ServiceV8Debugger
 
                 this.session!.packetManager!.writePacket(envelopPacket).catch((error) =>
                 {
-                    this.finishOrCancelRequest(seq);
-                    rejectParam(error);
+                    const current = this.finishOrCancelRequest(seq);
+                    if (current !== undefined)
+                        current.reject(error instanceof Error ? error : new Error(String(error)));
                 });
             }
         );
     }
 
     /** Remove one in-flight request and cancel its timeout guard. */
-    private finishOrCancelRequest(seqId : number)
+    private finishOrCancelRequest(seqId : number) : ServiceAwaitingRequest | undefined
     {
         Log.trace("ServiceV8Debugger.cancelRequest", [ seqId ]);
 
@@ -231,7 +267,10 @@ export default class ServiceV8Debugger
 
             clearTimeout(current.timeoutId);
             this.awaitingRequests.splice(i, 1);
+            return current;
         }
+
+        return undefined;
     }
 
     /** Request V8 capability information from the runtime. */
@@ -446,7 +485,9 @@ export default class ServiceV8Debugger
                 const tId = setTimeout(
                     () =>
                     {
-                        rejectParam(new Error("V8Debugger: Connect request timed out."));
+                        const current = this.finishConnectRequest();
+                        if (current !== undefined)
+                            current.reject(new Error("V8Debugger: Connect request timed out."));
                     },
                     this.requestTimeOut
                 );
@@ -463,8 +504,9 @@ export default class ServiceV8Debugger
 
                 this.session!.packetManager!.writePacket(envelopePacket).catch((error) =>
                 {
-                    clearTimeout(tId);
-                    rejectParam(error);
+                    const current = this.finishConnectRequest();
+                    if (current !== undefined)
+                        current.reject(error instanceof Error ? error : new Error(String(error)));
                 });
             }
         );
@@ -502,6 +544,10 @@ export default class ServiceV8Debugger
     public async initialize() : Promise<void>
     {
         Log.trace("ServiceV8Debugger.initialize", []);
+
+        this.rejectConnectRequest(new Error("V8Debugger service reinitialized."));
+        this.rejectAwaitingRequests(new Error("V8Debugger service reinitialized."));
+        this.seqId = -1;
     }
 
     /** Clear in-flight request bookkeeping after a connection ends. */
@@ -509,16 +555,8 @@ export default class ServiceV8Debugger
     {
         Log.trace("ServiceV8Debugger.deinitialize", []);
 
-        if (this.connectRequest !== undefined)
-        {
-            clearTimeout(this.connectRequest.timeoutId);
-            this.connectRequest = undefined;
-        }
-
-        for (const current of this.awaitingRequests)
-            clearTimeout(current.timeoutId);
-
-        this.awaitingRequests = [];
+        this.rejectConnectRequest(new Error("V8Debugger service disconnected."));
+        this.rejectAwaitingRequests(new Error("V8Debugger service disconnected."));
         this.seqId = -1;
     }
 
@@ -528,6 +566,11 @@ export default class ServiceV8Debugger
         Log.trace("ServiceV8Debugger.constructor", [ session ]);
 
         this.session = session;
+        this.session.packetManager.registerTransportCloseHandler((error : Error) : void =>
+        {
+            this.rejectConnectRequest(new Error("V8Debugger transport closed. " + error.message));
+            this.rejectAwaitingRequests(new Error("V8Debugger transport closed. " + error.message));
+        });
         this.session.packetManager.registerHandler("V8Debugger",
             (header, packet) : boolean =>
             {

@@ -45,6 +45,34 @@ export default class ServiceQmlInspector
     /** Currently selected runtime object ids. */
     private currentObjectIds : number[] = [];
 
+    /** Remove an outstanding request and cancel its timeout guard. */
+    private finishRequest(requestId : number) : InspectorAwaitingRequest | undefined
+    {
+        for (let index = 0; index < this.awaitingRequests.length; index++)
+        {
+            const current = this.awaitingRequests[index];
+            if (current.requestId !== requestId)
+                continue;
+
+            clearTimeout(current.timerId);
+            this.awaitingRequests.splice(index, 1);
+            return current;
+        }
+
+        return undefined;
+    }
+
+    /** Reject every pending request because the inspector transport is no longer usable. */
+    private rejectAwaitingRequests(error : Error) : void
+    {
+        while (this.awaitingRequests.length > 0)
+        {
+            const current = this.awaitingRequests.shift()!;
+            clearTimeout(current.timerId);
+            current.reject(error);
+        }
+    }
+
     /** Decode an incoming QmlInspector packet and reconcile local state. */
     private packetReceived(packet : Packet) : void
     {
@@ -58,12 +86,10 @@ export default class ServiceQmlInspector
             const success = packet.readBoolean();
             for (let index = 0; index < this.awaitingRequests.length; index++)
             {
-                const current = this.awaitingRequests[index];
-                if (current.requestId !== requestId)
-                    continue;
+                const current = this.finishRequest(requestId);
+                if (current === undefined)
+                    break;
 
-                this.awaitingRequests.splice(index, 1);
-                clearTimeout(current.timerId);
                 current.resolve(success);
                 return;
             }
@@ -116,33 +142,20 @@ export default class ServiceQmlInspector
 
             const timerId = setTimeout(() : void =>
             {
-                this.finishRequest(requestId);
-                reject(new Error("QmlInspector request timed out. Request Id: " + requestId));
+                const current = this.finishRequest(requestId);
+                if (current !== undefined)
+                    current.reject(new Error("QmlInspector request timed out. Request Id: " + requestId));
             }, 10000);
 
             this.awaitingRequests.push({ requestId: requestId, resolve: resolve, reject: reject, timerId: timerId });
 
             this.session!.packetManager.writePacket(envelope).catch((error) =>
             {
-                this.finishRequest(requestId);
-                reject(error);
+                const current = this.finishRequest(requestId);
+                if (current !== undefined)
+                    current.reject(error instanceof Error ? error : new Error(String(error)));
             });
         });
-    }
-
-    /** Remove an outstanding request and cancel its timeout guard. */
-    private finishRequest(requestId : number) : void
-    {
-        for (let index = 0; index < this.awaitingRequests.length; index++)
-        {
-            const current = this.awaitingRequests[index];
-            if (current.requestId !== requestId)
-                continue;
-
-            clearTimeout(current.timerId);
-            this.awaitingRequests.splice(index, 1);
-            return;
-        }
     }
 
     /** Return a snapshot of the last known QmlInspector state. */
@@ -204,6 +217,7 @@ export default class ServiceQmlInspector
     public async initialize() : Promise<void>
     {
         Log.trace("ServiceQmlInspector.initialize", []);
+        this.rejectAwaitingRequests(new Error("QmlInspector service reinitialized."));
         this.enabled = false;
         this.showAppOnTop = false;
         this.currentObjectIds = [];
@@ -216,9 +230,7 @@ export default class ServiceQmlInspector
         this.enabled = false;
         this.showAppOnTop = false;
         this.currentObjectIds = [];
-        for (const current of this.awaitingRequests)
-            clearTimeout(current.timerId);
-        this.awaitingRequests = [];
+        this.rejectAwaitingRequests(new Error("QmlInspector service disconnected."));
     }
 
     /** Register the QmlInspector packet handler on the shared transport. */
@@ -227,6 +239,10 @@ export default class ServiceQmlInspector
         Log.trace("ServiceQmlInspector.constructor", [ session ]);
 
         this.session = session;
+        this.session.packetManager.registerTransportCloseHandler((error : Error) : void =>
+        {
+            this.rejectAwaitingRequests(new Error("QmlInspector transport closed. " + error.message));
+        });
         this.session.packetManager.registerHandler("QmlInspector",
             (header, packet) : boolean =>
             {
