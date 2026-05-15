@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: 22.12.0
+  NODE_VERSION: 22.13.0
 
 jobs:
   build-test:
@@ -80,7 +80,6 @@ jobs:
           host: linux
           target: desktop
           arch: linux_gcc_64
-          modules: qtdeclarative
           cache: true
 
       - name: Install dependencies

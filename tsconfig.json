@@ -24,7 +24,7 @@
 		"noImplicitThis": true,
 		"inlineSourceMap": false,
 		"preserveConstEnums": true,
-		"strictNullChecks": true,
+        "strictNullChecks": true,
 		"noUnusedParameters": false,
         "forceConsistentCasingInFileNames": true,
 

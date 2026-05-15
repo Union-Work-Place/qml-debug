@@ -18,13 +18,21 @@ https://microsoft.github.io/debug-adapter-protocol/
 
 ## Development Toolchain
 
-Development targets Node.js `22.12.0` with npm `10.9.2`, matching the modern VS Code extension host baseline used by this repository. Use `.nvmrc` or `.node-version` to select the runtime, then install dependencies with npm:
+Development targets Node.js `22.13.0` with npm `10.9.2`, matching the modern VS Code extension host baseline used by this repository. Use `.nvmrc` or `.node-version` to select the runtime, then install dependencies with npm:
 
 ```sh
 npm install
 ```
 
 The repository uses npm package metadata and should keep `package-lock.json` committed after dependency refreshes. Packaging uses the maintained `@vscode/vsce` package while keeping the familiar `vsce` command name exposed by that package.
+
+If the host machine still has an older system Node.js, use the portable wrapper scripts instead of upgrading the machine-wide runtime. They download a repo-local Node `22.13.0` into `.local-toolchain/` and run the requested npm command with that toolchain:
+
+```sh
+npm run toolchain:node
+npm run bootstrap:portable
+npm run ci:portable
+```
 
 Core validation is:
 
