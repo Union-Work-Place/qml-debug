@@ -484,8 +484,11 @@
         "@qml-debug-root": "."
     },
     "scripts": {
+        "toolchain:node": "./scripts/with-node22.sh node -v",
         "bootstrap": "npm install",
+        "bootstrap:portable": "./scripts/with-node22.sh npm install",
         "bootstrap-prod": "npm install --omit=dev",
+        "bootstrap-prod:portable": "./scripts/with-node22.sh npm install --omit=dev",
         "compile": "tsc -p ./",
         "lint": "eslint src",
         "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -505,6 +508,7 @@
         "test:qt-integration": "npm run test:compile && mocha --require ./out-test/test/bootstrap.js out-test/test/qt-integration.test.js",
         "test:coverage": "nyc --reporter=text --reporter=html npm run test:unit",
         "ci": "npm run typecheck && npm run typecheck:test && npm run test:unit && npm run build",
+        "ci:portable": "./scripts/with-node22.sh npm run ci",
         "test": "npm run typecheck && npm run test:unit",
         "clean": "rm -rfv ./out/* ./out-test/* ./dist/*",
         "dist-clean": "rm -rfv ./node_modules ./out ./out-test ./dist"
