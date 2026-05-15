@@ -208,22 +208,22 @@
                 {
                     "command": "qml-debug.startProfiler",
                     "group": "navigation",
-                    "when": "view == qml-debug.profiler"
+                    "when": "view == qml-debug.profiler && qmldebug.profilerAvailable && !qmldebug.profilerRecording"
                 },
                 {
                     "command": "qml-debug.stopProfiler",
                     "group": "navigation",
-                    "when": "view == qml-debug.profiler"
+                    "when": "view == qml-debug.profiler && qmldebug.profilerAvailable && qmldebug.profilerRecording"
                 },
                 {
                     "command": "qml-debug.clearProfiler",
                     "group": "navigation",
-                    "when": "view == qml-debug.profiler"
+                    "when": "view == qml-debug.profiler && qmldebug.profilerAvailable"
                 },
                 {
                     "command": "qml-debug.exportProfilerSnapshot",
                     "group": "navigation",
-                    "when": "view == qml-debug.profiler"
+                    "when": "view == qml-debug.profiler && qmldebug.profilerAvailable"
                 },
                 {
                     "command": "qml-debug.refreshRuntimeTools",
@@ -344,7 +344,7 @@
                             },
                             "services": {
                                 "type": "array",
-                                "description": "Qt QML debug services requested from -qmljsdebugger.",
+                                "description": "Qt QML debug services requested from -qmljsdebugger. Profiler capture requires CanvasFrameRate; EngineControl is optional coordination support.",
                                 "items": {
                                     "type": "string"
                                 },
@@ -352,9 +352,7 @@
                                     "DebugMessages",
                                     "QmlDebugger",
                                     "V8Debugger",
-                                    "QmlInspector",
-                                    "CanvasFrameRate",
-                                    "EngineControl"
+                                    "QmlInspector"
                                 ]
                             },
                             "block": {
@@ -447,7 +445,7 @@
                     },
                     {
                         "label": "QML Debug: Launch With Inspector + Profiler",
-                        "description": "Launch a Qt/QML application with QmlInspector, CanvasFrameRate, and EngineControl enabled.",
+                        "description": "Launch a Qt/QML application with QmlInspector, CanvasFrameRate, and optional EngineControl coordination enabled.",
                         "body": {
                             "name": "QML Debug: Launch With Inspector + Profiler",
                             "type": "qml",

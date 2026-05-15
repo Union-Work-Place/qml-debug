@@ -39,6 +39,10 @@ interface ProfilerStatusResponse
 {
     /** Whether the active runtime negotiated the profiler service. */
     available : boolean;
+    /** Whether the runtime also exposes EngineControl coordination hooks. */
+    engineControlAvailable : boolean;
+    /** Human-readable profiler backend description. */
+    backend : string;
     /** Whether capture is currently active. */
     recording : boolean;
     /** Requested Qt feature mask in decimal form. */
@@ -177,6 +181,15 @@ export function shouldPollRuntimeViews(inspectorStatus : InspectorStatusResponse
         || (profilerStatus?.recording ?? false);
 }
 
+/** Derive the profiler toolbar context values from the last known runtime status. */
+export function getProfilerActionContext(profilerStatus : ProfilerStatusResponse | undefined) : { available : boolean; recording : boolean }
+{
+    return {
+        available: profilerStatus?.available ?? false,
+        recording: (profilerStatus?.available ?? false) && (profilerStatus?.recording ?? false)
+    };
+}
+
 /** Execute a QML runtime request against one concrete session and suppress passive refresh failures. */
 async function requestQmlRuntime<T>(session : vscode.DebugSession | undefined, command : string, args? : any) : Promise<T | undefined>
 {
@@ -305,6 +318,12 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
         inspectorProvider.refresh();
         profilerProvider.refresh();
     };
+    const updateCommandContexts = async () : Promise<void> =>
+    {
+        const profilerContext = getProfilerActionContext(snapshot.profilerStatus);
+        await vscode.commands.executeCommand("setContext", "qmldebug.profilerAvailable", profilerContext.available);
+        await vscode.commands.executeCommand("setContext", "qmldebug.profilerRecording", profilerContext.recording);
+    };
     const refreshAllViews = async () : Promise<void> =>
     {
         if (refreshInFlight !== undefined)
@@ -319,6 +338,7 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
                 snapshot.inspectorStatus = undefined;
                 snapshot.inspectorObjectTree = undefined;
                 snapshot.profilerStatus = undefined;
+                await updateCommandContexts();
                 updatePolling();
                 refreshProviders();
                 return;
@@ -331,6 +351,7 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
                 ? await requestQmlRuntime<InspectorObjectTreeResponse>(snapshot.session, "qml/inspector/objectTree", { objectIds: snapshot.inspectorStatus.currentObjectIds })
                 : undefined;
 
+            await updateCommandContexts();
             updatePolling();
             refreshProviders();
         })().finally(() : void =>
@@ -384,6 +405,8 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
 
         return [
             new RuntimeTreeItem("Profiler service", status.available ? "available" : "unavailable"),
+            new RuntimeTreeItem("Profiler backend", status.backend),
+            new RuntimeTreeItem("EngineControl", status.engineControlAvailable ? "available" : "unavailable"),
             new RuntimeTreeItem("Recording", status.recording ? "running" : "stopped",
                 { command: status.recording ? "qml-debug.stopProfiler" : "qml-debug.startProfiler", title: "Toggle Profiler" }),
             new RuntimeTreeItem("Requested features", status.requestedFeatures.length > 0 ? status.requestedFeatures.join(", ") : "none"),

@@ -169,8 +169,9 @@ The profiler export now classifies captured packets into transport-level event k
 
 The extension now contributes a profiler-enabled launch preset and a JSON snippet so you do not need to hand-edit the `services` array every time.
 
-- `Launch QML with Inspector + Profiler` appears in generated launch configurations.
-- `qml-debug-launch-profiler` inserts a launch.json snippet with `QmlInspector`, `CanvasFrameRate`, and `EngineControl` enabled.
+- Standard launch defaults stop at `DebugMessages`, `QmlDebugger`, `V8Debugger`, and `QmlInspector`; they do not implicitly advertise profiler capture anymore.
+- `Launch QML with Inspector + Profiler` appears in generated launch configurations and requests the broadest validated profiler combo: `CanvasFrameRate` plus `EngineControl` when the runtime supports both.
+- `qml-debug-launch-profiler` inserts a launch.json snippet with `QmlInspector`, `CanvasFrameRate`, and `EngineControl` requested.
 
 ## Standalone Qt Fixture Project
 
@@ -219,7 +220,9 @@ The extension negotiates services dynamically and degrades based on what the tar
 - Core QML debugging requires `DebugMessages`, `QmlDebugger`, and `V8Debugger`.
 - QML Inspector features require `QmlInspector`.
 - Profiler capture requires `CanvasFrameRate`.
-- `EngineControl` is optional, but Qt runtimes that expose it can coordinate profiler startup and shutdown more cleanly.
+- `EngineControl` alone does not make profiler capture available.
+- `CanvasFrameRate` without `EngineControl` is a supported profiler backend.
+- `CanvasFrameRate` together with `EngineControl` is also supported and gives cleaner start/stop coordination on runtimes that expose both services.
 
 This means support is capability-based rather than hardcoded to a single Qt release. In practice, Qt builds that expose the legacy `QDeclarativeDebugClient` protocol with those services will work best.
 

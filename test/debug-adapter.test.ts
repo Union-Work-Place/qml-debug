@@ -606,7 +606,27 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(response.body.dataStreamVersion, 12);
         assert.strictEqual(response.body.inspectorAvailable, true);
         assert.strictEqual(response.body.profilerAvailable, true);
+        assert.strictEqual(response.body.profilerBackend, "CanvasFrameRate + EngineControl");
+        assert.strictEqual(response.body.profilerEngineControlAvailable, true);
         assert.strictEqual(response.body.services.some((service : any) => service.name === "QmlInspector"), true);
+    });
+
+    it("does not advertise profiler availability when only EngineControl is negotiated", () =>
+    {
+        const { session, declarative } = createSession();
+        declarative.capabilities.services = [
+            { name: "DebugMessages", version: 1 },
+            { name: "QmlDebugger", version: 1 },
+            { name: "V8Debugger", version: 1 },
+            { name: "QmlInspector", version: 1 },
+            { name: "EngineControl", version: 1 }
+        ];
+
+        const response = session.callCustom("qml/getCapabilities");
+
+        assert.strictEqual(response.body.profilerAvailable, false);
+        assert.strictEqual(response.body.profilerBackend, "EngineControl only (capture unavailable)");
+        assert.strictEqual(response.body.profilerEngineControlAvailable, true);
     });
 
     it("selects inspector objects by source location through QmlDebugger lookups", async () =>
@@ -713,6 +733,84 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(response.body.summary.packetCount, 1);
         assert.deepStrictEqual(response.body.eventKinds, [ { kind: "uint64", count: 1 } ]);
         assert.strictEqual(response.body.timeline[0].decodedValue, 8);
+    });
+
+    it("reports profiler status for a CanvasFrameRate-only runtime and allows capture commands", async () =>
+    {
+        const { session, declarative } = createSession();
+        declarative.capabilities.services = [
+            { name: "DebugMessages", version: 1 },
+            { name: "QmlDebugger", version: 1 },
+            { name: "V8Debugger", version: 1 },
+            { name: "CanvasFrameRate", version: 1 }
+        ];
+
+        const status = session.callCustom("qml/profiler/status");
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(status.body.available, true);
+        assert.strictEqual(status.body.engineControlAvailable, false);
+        assert.strictEqual(status.body.backend, "CanvasFrameRate");
+
+        const start = session.callCustom("qml/profiler/start", { featureMask: "8", flushInterval: 25 });
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(start.body.recording, true);
+
+        const stop = session.callCustom("qml/profiler/stop");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(stop.body.recording, false);
+
+        const cleared = session.callCustom("qml/profiler/clear");
+        assert.strictEqual(cleared.body.recording, false);
+
+        const exported = session.callCustom("qml/profiler/export");
+        assert.ok(Array.isArray(exported.body.timeline));
+    });
+
+    it("rejects profiler start and stop when CanvasFrameRate is missing even if EngineControl is present", async () =>
+    {
+        const { session, declarative } = createSession();
+        declarative.capabilities.services = [
+            { name: "DebugMessages", version: 1 },
+            { name: "QmlDebugger", version: 1 },
+            { name: "V8Debugger", version: 1 },
+            { name: "EngineControl", version: 1 }
+        ];
+
+        const status = session.callCustom("qml/profiler/status");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(status.body.available, false);
+        assert.strictEqual(status.body.backend, "EngineControl only (capture unavailable)");
+
+        const start = session.callCustom("qml/profiler/start");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(start.success, false);
+        assert.strictEqual(start.message!.includes("CanvasFrameRate"), true);
+
+        const stop = session.callCustom("qml/profiler/stop");
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.strictEqual(stop.success, false);
+        assert.strictEqual(stop.message!.includes("CanvasFrameRate"), true);
+    });
+
+    it("keeps launch defaults and profiler presets aligned", () =>
+    {
+        const { session } = createSession();
+
+        assert.strictEqual(
+            session.buildQmlDebuggerArgument({ program: "/fixtures/app" } as any),
+            "-qmljsdebugger=host:localhost,port:12150,block,services:DebugMessages,QmlDebugger,V8Debugger,QmlInspector"
+        );
+        assert.strictEqual(
+            session.buildQmlDebuggerArgument({ program: "/fixtures/app", services: [ "DebugMessages", "QmlDebugger", "V8Debugger", "QmlInspector", "CanvasFrameRate", "EngineControl" ] } as any),
+            "-qmljsdebugger=host:localhost,port:12150,block,services:DebugMessages,QmlDebugger,V8Debugger,QmlInspector,CanvasFrameRate,EngineControl"
+        );
     });
 
     it("normalizes physical and qrc source path mappings", () =>

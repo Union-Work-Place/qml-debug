@@ -2,7 +2,7 @@
   "QML Debug Launch With Inspector And Profiler": {
     "scope": "jsonc",
     "prefix": "qml-debug-launch-profiler",
-    "description": "Launch a QML application with inspector and profiler services enabled.",
+    "description": "Launch a QML application with inspector, CanvasFrameRate capture, and optional EngineControl coordination enabled.",
     "body": [
       "{",
       "  \"type\": \"qml\",",

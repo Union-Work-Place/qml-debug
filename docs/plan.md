@@ -72,9 +72,9 @@
 
 ## Phase 12: Profiler Capability Normalization and Compatibility
 
-- [ ] Align profiler capability reporting, launch defaults, and command gating across `CanvasFrameRate` and `EngineControl` so the UI cannot advertise profiler availability that the command path later rejects.
-- [ ] Extend profiler/runtime-view tests to cover Qt runtimes that expose different profiler service combinations and verify start, stop, clear, and export behavior for each supported combination.
-- [ ] Document the effective profiler backend requirements per Qt version and make the launch/configuration snippets reflect the validated combinations instead of relying on the current mixed defaults.
+- [x] Align profiler capability reporting, launch defaults, and command gating across `CanvasFrameRate` and `EngineControl` so the UI cannot advertise profiler availability that the command path later rejects.
+- [x] Extend profiler/runtime-view tests to cover Qt runtimes that expose different profiler service combinations and verify start, stop, clear, and export behavior for each supported combination.
+- [x] Document the effective profiler backend requirements per Qt version and make the launch/configuration snippets reflect the validated combinations instead of relying on the current mixed defaults.
 
 ## Follow-Up
 

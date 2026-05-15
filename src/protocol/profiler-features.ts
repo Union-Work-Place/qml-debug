@@ -18,8 +18,43 @@ export const QML_PROFILER_FEATURE_NAMES = [
 const BIGINT_ZERO = BigInt(0);
 const BIGINT_ONE = BigInt(1);
 
+/** Qt debug services that provide raw profiler packet capture. */
+export const QML_PROFILER_CAPTURE_SERVICE = "CanvasFrameRate";
+/** Optional Qt debug service that can coordinate profiler lifecycle with the runtime. */
+export const QML_PROFILER_COORDINATION_SERVICE = "EngineControl";
+
+/** Normalized profiler capability snapshot derived from negotiated Qt services. */
+export interface QmlProfilerServiceCapabilities
+{
+    /** Whether raw profiler packet capture is available. */
+    profilerAvailable : boolean;
+    /** Whether the runtime exposes CanvasFrameRate packet capture. */
+    canvasFrameRateAvailable : boolean;
+    /** Whether the runtime exposes EngineControl coordination hooks. */
+    engineControlAvailable : boolean;
+    /** Human-readable backend description surfaced in capability snapshots and UI. */
+    backend : string;
+}
+
 /** Default profiler capture mask: enable every feature Qt Creator exposes in its menu model. */
 export const DEFAULT_PROFILER_FEATURE_MASK = (BIGINT_ONE << BigInt(QML_PROFILER_FEATURE_NAMES.length)) - BIGINT_ONE;
+
+/** Derive normalized profiler capabilities from the negotiated Qt service list. */
+export function getProfilerServiceCapabilities(serviceNames : string[]) : QmlProfilerServiceCapabilities
+{
+    const availableServices = new Set(serviceNames);
+    const canvasFrameRateAvailable = availableServices.has(QML_PROFILER_CAPTURE_SERVICE);
+    const engineControlAvailable = availableServices.has(QML_PROFILER_COORDINATION_SERVICE);
+
+    return {
+        profilerAvailable: canvasFrameRateAvailable,
+        canvasFrameRateAvailable: canvasFrameRateAvailable,
+        engineControlAvailable: engineControlAvailable,
+        backend: canvasFrameRateAvailable
+            ? (engineControlAvailable ? "CanvasFrameRate + EngineControl" : "CanvasFrameRate")
+            : (engineControlAvailable ? "EngineControl only (capture unavailable)" : "Unavailable")
+    };
+}
 
 /** Return the human-readable feature names enabled in a profiler mask. */
 export function profilerFeatureNamesFromMask(mask : bigint) : string[]

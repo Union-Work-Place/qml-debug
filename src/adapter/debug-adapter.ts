@@ -5,7 +5,7 @@ import ServiceNativeDebugger from "@qml-debug/services/v8-debugger";
 import ServiceDeclarativeDebugClient, { NegotiatedQtDebugCapabilities } from "@qml-debug/services/declarative-debug-client";
 import ServiceQmlInspector, { QmlInspectorSnapshot } from "@qml-debug/services/qml-inspector";
 import ServiceQmlProfiler, { QmlProfilerExport, QmlProfilerSnapshot } from "@qml-debug/services/qml-profiler";
-import { parseProfilerFeatureMask } from "@qml-debug/protocol/profiler-features";
+import { getProfilerServiceCapabilities, parseProfilerFeatureMask } from "@qml-debug/protocol/profiler-features";
 import PacketManager from "@qml-debug/transport/packet-manager";
 import { QmlEvent, QmlBreakEventBody, isQmlBreakEvent } from "@qml-debug/protocol/qml-messages";
 import { QmlFrame, QmlVariable } from "@qml-debug/protocol/qml-types";
@@ -76,6 +76,8 @@ interface LaunchProcessOptions
 
 /** Function used to start the debuggee process; injectable for tests. */
 type ProcessLauncher = (options : LaunchProcessOptions) => ChildProcess;
+
+const DEFAULT_QML_DEBUG_SERVICES = [ "DebugMessages", "QmlDebugger", "V8Debugger", "QmlInspector" ];
 
 /** Common lifecycle methods implemented by every Qt debug service wrapper. */
 interface DebugLifecycleService
@@ -397,9 +399,12 @@ export class QmlDebugSession extends LoggingDebugSession
         services : { name : string; version : number; available : boolean }[];
         inspectorAvailable : boolean;
         profilerAvailable : boolean;
+        profilerBackend : string;
+        profilerEngineControlAvailable : boolean;
     }
     {
         const capabilities = this.declarativeDebugClient.getCapabilities();
+        const profilerCapabilities = getProfilerServiceCapabilities(capabilities.services.map((service) : string => { return service.name; }));
 
         return {
             protocolVersion: capabilities.protocolVersion,
@@ -413,8 +418,9 @@ export class QmlDebugSession extends LoggingDebugSession
                 };
             }),
             inspectorAvailable: this.declarativeDebugClient.isServiceAvailable("QmlInspector"),
-            profilerAvailable: this.declarativeDebugClient.isServiceAvailable("CanvasFrameRate")
-                || this.declarativeDebugClient.isServiceAvailable("EngineControl")
+            profilerAvailable: profilerCapabilities.profilerAvailable,
+            profilerBackend: profilerCapabilities.backend,
+            profilerEngineControlAvailable: profilerCapabilities.engineControlAvailable
         };
     }
 
@@ -464,10 +470,16 @@ export class QmlDebugSession extends LoggingDebugSession
         };
     }
 
-    private getProfilerStatusResponse() : QmlProfilerSnapshot & { available : boolean }
+    private getProfilerStatusResponse() : QmlProfilerSnapshot & { available : boolean; engineControlAvailable : boolean; backend : string }
     {
+        const profilerCapabilities = getProfilerServiceCapabilities(
+            this.declarativeDebugClient.getCapabilities().services.map((service) : string => { return service.name; })
+        );
+
         return {
-            available: this.declarativeDebugClient.isServiceAvailable("CanvasFrameRate"),
+            available: profilerCapabilities.profilerAvailable,
+            engineControlAvailable: profilerCapabilities.engineControlAvailable,
+            backend: profilerCapabilities.backend,
             ...this.profiler.getSnapshot()
         };
     }
@@ -672,7 +684,7 @@ export class QmlDebugSession extends LoggingDebugSession
     {
         const host = args.host ?? "localhost";
         const port = args.port ?? 12150;
-        const services = args.services ?? [ "DebugMessages", "QmlDebugger", "V8Debugger", "QmlInspector" ];
+        const services = args.services ?? DEFAULT_QML_DEBUG_SERVICES;
         const fragments = [ "host:" + host, "port:" + port ];
 
         if (args.block !== false)

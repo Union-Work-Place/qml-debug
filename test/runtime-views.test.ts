@@ -1,5 +1,5 @@
 import assert = require("assert");
-import { QmlRuntimeSessionTracker, shouldPollRuntimeViews } from "@qml-debug/extension/runtime-views";
+import { getProfilerActionContext, QmlRuntimeSessionTracker, shouldPollRuntimeViews } from "@qml-debug/extension/runtime-views";
 
 /** Build a lightweight debug session value for runtime-view tests. */
 function debugSession(id : string, type : string = "qml") : any
@@ -59,7 +59,15 @@ describe("runtime views", () =>
         assert.strictEqual(shouldPollRuntimeViews(undefined, undefined), false);
         assert.strictEqual(shouldPollRuntimeViews({ enabled: true, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0, available: true }, undefined), true);
         assert.strictEqual(shouldPollRuntimeViews({ enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 1, available: true }, undefined), true);
-        assert.strictEqual(shouldPollRuntimeViews({ enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0, available: true }, { available: true, recording: true, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), true);
-        assert.strictEqual(shouldPollRuntimeViews({ enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0, available: true }, { available: true, recording: false, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), false);
+        assert.strictEqual(shouldPollRuntimeViews({ enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0, available: true }, { available: true, engineControlAvailable: true, backend: "CanvasFrameRate + EngineControl", recording: true, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), true);
+        assert.strictEqual(shouldPollRuntimeViews({ enabled: false, showAppOnTop: false, currentObjectIds: [], pendingRequestCount: 0, available: true }, { available: true, engineControlAvailable: false, backend: "CanvasFrameRate", recording: false, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), false);
+    });
+
+    it("derives profiler toolbar visibility from normalized profiler availability", () =>
+    {
+        assert.deepStrictEqual(getProfilerActionContext(undefined), { available: false, recording: false });
+        assert.deepStrictEqual(getProfilerActionContext({ available: false, engineControlAvailable: true, backend: "EngineControl only (capture unavailable)", recording: true, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), { available: false, recording: false });
+        assert.deepStrictEqual(getProfilerActionContext({ available: true, engineControlAvailable: false, backend: "CanvasFrameRate", recording: false, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), { available: true, recording: false });
+        assert.deepStrictEqual(getProfilerActionContext({ available: true, engineControlAvailable: true, backend: "CanvasFrameRate + EngineControl", recording: true, requestedFeatureMask: "0", requestedFeatures: [], flushInterval: 250, packetCount: 0, receivedBytes: 0, recentPackets: [], timelineEvents: [] }), { available: true, recording: true });
     });
 });
