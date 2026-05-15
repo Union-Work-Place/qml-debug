@@ -214,7 +214,7 @@ class MockProfiler extends MockLifecycleService
             packetCount: 1,
             receivedBytes: 8,
             recentPackets: [ { timestamp: "2026-05-05T20:00:00.000Z", size: 8, kind: "uint64", hexPreview: "0000000000000008" } ],
-            timelineEvents: [ { timestamp: "2026-05-05T20:00:00.000Z", size: 8, kind: "uint64", hexPreview: "0000000000000008", decodedValue: 8 } ]
+            timelineEvents: [ { timestamp: "2026-05-05T20:00:00.000Z", size: 8, kind: "uint64", category: "scene-graph", label: "frame-timestamp", valueUnit: "microseconds", hexPreview: "0000000000000008", decodedValue: 8 } ]
         };
     }
 
@@ -224,6 +224,7 @@ class MockProfiler extends MockLifecycleService
         return {
             summary: this.getSnapshot(),
             eventKinds: [ { kind: "uint64", count: 1 } ],
+            eventCategories: [ { category: "scene-graph", count: 1 } ],
             timeline: this.getSnapshot().timelineEvents
         };
     }
@@ -258,6 +259,8 @@ class MockPacketManager extends PacketManager
     public connectCount = 0;
     /** Number of transport disconnect calls. */
     public disconnectCount = 0;
+    /** Number of initial connect attempts that should fail. */
+    public connectFailuresBeforeSuccess = 0;
 
     /** Create a packet manager with an inert session. */
     public constructor()
@@ -269,6 +272,11 @@ class MockPacketManager extends PacketManager
     public async connect() : Promise<void>
     {
         this.connectCount++;
+        if (this.connectFailuresBeforeSuccess > 0)
+        {
+            this.connectFailuresBeforeSuccess--;
+            throw new Error("Debug port is not ready yet.");
+        }
     }
 
     /** Record a disconnection without closing a socket. */
@@ -305,6 +313,8 @@ class MockV8Debugger extends MockLifecycleService
     public lookupResponse = qmlResponse("lookup", {});
     /** Evaluate response returned by requestEvaluate. */
     public evaluateResponse = qmlResponse("evaluate", { handle: 1, type: "number", value: 42 });
+    /** Recorded evaluate requests. */
+    public evaluateCalls : { frameId : number; expression : string }[] = [];
 
     /** Record V8 debugger handshake. */
     public async handshake() : Promise<void>
@@ -367,6 +377,7 @@ class MockV8Debugger extends MockLifecycleService
     /** Return the configured evaluate response. */
     public async requestEvaluate(frameId : number, expression : string) : Promise<any>
     {
+        this.evaluateCalls.push({ frameId: frameId, expression: expression });
         return this.evaluateResponse;
     }
 
@@ -522,6 +533,38 @@ class TestQmlDebugSession extends QmlDebugSession
         return response;
     }
 
+    /** Invoke loadedSourcesRequest for tests. */
+    public callLoadedSources() : DebugProtocol.LoadedSourcesResponse
+    {
+        const response = dapResponse("loadedSources") as DebugProtocol.LoadedSourcesResponse;
+        this.loadedSourcesRequest(response, {});
+        return response;
+    }
+
+    /** Invoke exceptionInfoRequest for tests. */
+    public callExceptionInfo() : DebugProtocol.ExceptionInfoResponse
+    {
+        const response = dapResponse("exceptionInfo") as DebugProtocol.ExceptionInfoResponse;
+        this.exceptionInfoRequest(response, { threadId: this.mainQmlThreadId });
+        return response;
+    }
+
+    /** Invoke setExpressionRequest for tests. */
+    public async callSetExpression(args : DebugProtocol.SetExpressionArguments) : Promise<DebugProtocol.SetExpressionResponse>
+    {
+        const response = dapResponse("setExpression") as DebugProtocol.SetExpressionResponse;
+        await this.setExpressionRequest(response, args);
+        return response;
+    }
+
+    /** Invoke setVariableRequest for tests. */
+    public async callSetVariable(args : DebugProtocol.SetVariableArguments) : Promise<DebugProtocol.SetVariableResponse>
+    {
+        const response = dapResponse("setVariable") as DebugProtocol.SetVariableResponse;
+        await this.setVariableRequest(response, args);
+        return response;
+    }
+
     /** Invoke a stepping request for tests. */
     public async callStep(kind : "in" | "out" | "next" | "continue") : Promise<DebugProtocol.Response>
     {
@@ -591,6 +634,10 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(response.body!.supportsConfigurationDoneRequest, true);
         assert.strictEqual(response.body!.supportsFunctionBreakpoints, false);
         assert.strictEqual(response.body!.supportsEvaluateForHovers, true);
+        assert.strictEqual(response.body!.supportsLoadedSourcesRequest, true);
+        assert.strictEqual(response.body!.supportsExceptionInfoRequest, true);
+        assert.strictEqual(response.body!.supportsSetExpression, true);
+        assert.strictEqual(response.body!.supportsSetVariable, true);
         assert.strictEqual(response.body!.exceptionBreakpointFilters![0].filter, "all");
         assert.strictEqual(response.body!.exceptionBreakpointFilters![1].filter, "uncaught");
     });
@@ -732,6 +779,9 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(response.success, true);
         assert.strictEqual(response.body.summary.packetCount, 1);
         assert.deepStrictEqual(response.body.eventKinds, [ { kind: "uint64", count: 1 } ]);
+        assert.deepStrictEqual(response.body.eventCategories, [ { category: "scene-graph", count: 1 } ]);
+        assert.strictEqual(response.body.timeline[0].category, "scene-graph");
+        assert.strictEqual(response.body.timeline[0].label, "frame-timestamp");
         assert.strictEqual(response.body.timeline[0].decodedValue, 8);
     });
 
@@ -892,6 +942,28 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(v8.handshakeCount, 1);
     });
 
+    it("retries launch attach until the spawned QML debug port is ready", async () =>
+    {
+        const { session, packetManager } = createSession();
+        packetManager.connectFailuresBeforeSuccess = 2;
+
+        const response = await session.callLaunch(
+            {
+                program: "/fixtures/fake-qml-app",
+                args: [],
+                host: "127.0.0.1",
+                port: 23456,
+                paths: {},
+                services: [ "DebugMessages", "QmlDebugger", "V8Debugger" ],
+                block: true,
+                connectTimeoutMs: 1000
+            }
+        );
+
+        assert.strictEqual(response.success, true);
+        assert.strictEqual(packetManager.connectCount, 3);
+    });
+
     it("maps stack traces, scopes, variables and evaluate results to DAP", async () =>
     {
         const { session, v8 } = createSession();
@@ -906,6 +978,9 @@ describe("QmlDebugSession", () =>
         assert.strictEqual(stack.body!.stackFrames[0].source!.path, "/project/qml/Main.qml");
         assert.strictEqual(stack.body!.stackFrames[0].line, 9);
 
+        const loadedSources = session.callLoadedSources();
+        assert.deepStrictEqual(loadedSources.body!.sources.map((source) : string | undefined => { return source.path; }), [ "/project/qml/Main.qml" ]);
+
         const scopes = await session.callScopes(3);
         assert.strictEqual(scopes.body!.scopes[0].name, "Locals");
         assert.strictEqual(scopes.body!.scopes[0].variablesReference, 5);
@@ -919,6 +994,15 @@ describe("QmlDebugSession", () =>
 
         const hover = await session.callEvaluate({ expression: "title", context: "hover" });
         assert.strictEqual(hover.body!.result, "\"hello\"");
+
+        v8.evaluateResponse = qmlResponse("evaluate", { handle: 9, type: "number", value: 7 });
+        const setExpression = await session.callSetExpression({ expression: "counter", value: "7", frameId: 3 });
+        assert.strictEqual(setExpression.body!.value, "7");
+        assert.deepStrictEqual(v8.evaluateCalls[v8.evaluateCalls.length - 1], { frameId: 3, expression: "counter = 7" });
+
+        const setVariable = await session.callSetVariable({ variablesReference: 5, name: "counter", value: "8" });
+        assert.strictEqual(setVariable.body!.value, "7");
+        assert.deepStrictEqual(v8.evaluateCalls[v8.evaluateCalls.length - 1], { frameId: 0, expression: "counter = 8" });
     });
 
     it("routes pause, stepping, exception and disconnect requests to mocked services", async () =>
@@ -927,6 +1011,7 @@ describe("QmlDebugSession", () =>
 
         await session.callSetExceptionBreakpoints([ "all", "uncaught" ]);
         await session.callPause();
+        const exceptionInfo = session.callExceptionInfo();
         await session.callStep("in");
         await session.callStep("next");
         await session.callStep("out");
@@ -935,6 +1020,8 @@ describe("QmlDebugSession", () =>
         await session.callDisconnect();
 
         assert.deepStrictEqual(v8.exceptionRequests, [ { type: "all", enabled: true }, { type: "uncaught", enabled: true } ]);
+        assert.strictEqual(exceptionInfo.body!.exceptionId, "pause");
+        assert.strictEqual(exceptionInfo.body!.description, "Runtime paused by client request.");
         assert.deepStrictEqual(v8.continueCalls.slice(0, 4), [ { stepAction: "in", stepCount: 1 }, { stepAction: "next", stepCount: 1 }, { stepAction: "out", stepCount: 1 }, { stepAction: undefined, stepCount: undefined } ]);
         assert.strictEqual(session.events.some((event) => event.event === "stopped" && (event as DebugProtocol.StoppedEvent).body.reason === "pause"), true);
         assert.strictEqual(packetManager.connectCount, 1);

@@ -200,7 +200,7 @@ class FixtureProfiler extends FixtureLifecycleService
     /** Return an empty profiler export. */
     public exportSnapshot() : any
     {
-        return { summary: this.getSnapshot(), eventKinds: [], timeline: [] };
+        return { summary: this.getSnapshot(), eventKinds: [], eventCategories: [], timeline: [] };
     }
 
     /** Ignore profiler start requests. */

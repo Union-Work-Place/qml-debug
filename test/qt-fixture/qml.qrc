@@ -1,8 +1,8 @@
 <RCC>
     <qresource prefix="/qml">
-        <file>qml/Main.qml</file>
-        <file>qml/helpers.js</file>
-        <file>qml/components/FixtureDelegate.qml</file>
-        <file>qml/components/FixturePanel.qml</file>
+        <file alias="Main.qml">qml/Main.qml</file>
+        <file alias="helpers.js">qml/helpers.js</file>
+        <file alias="components/FixtureDelegate.qml">qml/components/FixtureDelegate.qml</file>
+        <file alias="components/FixturePanel.qml">qml/components/FixturePanel.qml</file>
     </qresource>
 </RCC>

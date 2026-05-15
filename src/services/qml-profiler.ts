@@ -20,6 +20,12 @@ interface ProfilerPacketSummary
 /** Structured event derived from a captured profiler packet. */
 export interface QmlProfilerTimelineEvent extends ProfilerPacketSummary
 {
+    /** Best-effort Qt Creator-style timeline category. */
+    category : "animation" | "binding" | "control" | "javascript" | "memory" | "scene-graph" | "unknown";
+    /** Human-readable semantic event label. */
+    label : string;
+    /** Unit attached to numeric decoded values when known. */
+    valueUnit? : "bytes" | "count" | "microseconds" | "milliseconds";
     /** Best-effort decoded primitive payload, when recognized. */
     decodedValue? : boolean | number | string | number[];
 }
@@ -31,6 +37,8 @@ export interface QmlProfilerExport
     summary : QmlProfilerSnapshot;
     /** Frequency table grouped by timeline event kind. */
     eventKinds : { kind : string; count : number }[];
+    /** Frequency table grouped by semantic timeline category. */
+    eventCategories : { category : string; count : number }[];
     /** Structured event timeline retained in memory. */
     timeline : QmlProfilerTimelineEvent[];
 }
@@ -106,22 +114,59 @@ export default class ServiceQmlProfiler
         return new Packet(rawPacket).readStringUTF8();
     }
 
+    /** Add a Qt Creator-style semantic layer on top of the primitive packet kind. */
+    private describeTimelineEvent(kind : string, decodedValue : boolean | number | string | number[] | undefined) : Pick<QmlProfilerTimelineEvent, "category" | "label" | "valueUnit">
+    {
+        if (kind === "boolean")
+            return { category: "control", label: decodedValue === true ? "recording-enabled" : "recording-disabled" };
+
+        if (kind === "utf16-string" || kind === "utf8-string")
+        {
+            const text = String(decodedValue ?? "").toLowerCase();
+            if (text.includes("binding"))
+                return { category: "binding", label: "binding-event" };
+            if (text.includes("animation"))
+                return { category: "animation", label: "animation-event" };
+            if (text.includes("javascript") || text.includes("script"))
+                return { category: "javascript", label: "javascript-event" };
+            if (text.includes("memory") || text.includes("alloc"))
+                return { category: "memory", label: "memory-event" };
+
+            return { category: "unknown", label: "timeline-string" };
+        }
+
+        if (kind === "uint64")
+            return { category: "scene-graph", label: "frame-timestamp", valueUnit: "microseconds" };
+
+        if (kind === "int32")
+            return { category: "scene-graph", label: "frame-counter", valueUnit: "count" };
+
+        if (kind === "int32-array")
+            return { category: "scene-graph", label: "timeline-range" };
+
+        return { category: "unknown", label: "raw-packet" };
+    }
+
     /** Classify and decode a captured profiler packet into a structured event. */
     private decodeTimelineEvent(rawPacket : Buffer, timestamp : string) : QmlProfilerTimelineEvent
     {
         const hexPreview = rawPacket.toString("hex").slice(0, 128);
 
         if (rawPacket.length === 0)
-            return { timestamp: timestamp, size: 0, kind: "empty", hexPreview: hexPreview };
+            return { timestamp: timestamp, size: 0, kind: "empty", category: "unknown", label: "empty-packet", hexPreview: hexPreview };
 
         if (rawPacket.length === 1 && (rawPacket[0] === 0 || rawPacket[0] === 1))
+        {
+            const decodedValue = rawPacket[0] === 1;
             return {
                 timestamp: timestamp,
                 size: 1,
                 kind: "boolean",
+                ...this.describeTimelineEvent("boolean", decodedValue),
                 hexPreview: hexPreview,
-                decodedValue: rawPacket[0] === 1
+                decodedValue: decodedValue
             };
+        }
 
         const utf16String = this.tryDecodeUtf16String(rawPacket);
         if (utf16String !== undefined)
@@ -129,6 +174,7 @@ export default class ServiceQmlProfiler
                 timestamp: timestamp,
                 size: rawPacket.length,
                 kind: "utf16-string",
+                ...this.describeTimelineEvent("utf16-string", utf16String),
                 hexPreview: hexPreview,
                 decodedValue: utf16String
             };
@@ -139,27 +185,36 @@ export default class ServiceQmlProfiler
                 timestamp: timestamp,
                 size: rawPacket.length,
                 kind: "utf8-string",
+                ...this.describeTimelineEvent("utf8-string", utf8String),
                 hexPreview: hexPreview,
                 decodedValue: utf8String
             };
 
         if (rawPacket.length === 4)
+        {
+            const decodedValue = new Packet(rawPacket).readInt32BE();
             return {
                 timestamp: timestamp,
                 size: 4,
                 kind: "int32",
+                ...this.describeTimelineEvent("int32", decodedValue),
                 hexPreview: hexPreview,
-                decodedValue: new Packet(rawPacket).readInt32BE()
+                decodedValue: decodedValue
             };
+        }
 
         if (rawPacket.length === 8)
+        {
+            const decodedValue = Number(new Packet(rawPacket).readUInt64BE());
             return {
                 timestamp: timestamp,
                 size: 8,
                 kind: "uint64",
+                ...this.describeTimelineEvent("uint64", decodedValue),
                 hexPreview: hexPreview,
-                decodedValue: Number(new Packet(rawPacket).readUInt64BE())
+                decodedValue: decodedValue
             };
+        }
 
         if (rawPacket.length % 4 === 0 && rawPacket.length <= 64)
         {
@@ -172,6 +227,7 @@ export default class ServiceQmlProfiler
                 timestamp: timestamp,
                 size: rawPacket.length,
                 kind: "int32-array",
+                ...this.describeTimelineEvent("int32-array", values),
                 hexPreview: hexPreview,
                 decodedValue: values
             };
@@ -181,6 +237,7 @@ export default class ServiceQmlProfiler
             timestamp: timestamp,
             size: rawPacket.length,
             kind: "binary",
+            ...this.describeTimelineEvent("binary", undefined),
             hexPreview: hexPreview
         };
     }
@@ -250,14 +307,21 @@ export default class ServiceQmlProfiler
     public exportSnapshot() : QmlProfilerExport
     {
         const eventKinds = new Map<string, number>();
+        const eventCategories = new Map<string, number>();
         for (const current of this.timelineEvents)
+        {
             eventKinds.set(current.kind, (eventKinds.get(current.kind) ?? 0) + 1);
+            eventCategories.set(current.category, (eventCategories.get(current.category) ?? 0) + 1);
+        }
 
         return {
             summary: this.getSnapshot(),
             eventKinds: [ ...eventKinds.entries() ]
                 .map((entry) => { return { kind: entry[0], count: entry[1] }; })
                 .sort((left, right) : number => { return right.count - left.count || left.kind.localeCompare(right.kind); }),
+            eventCategories: [ ...eventCategories.entries() ]
+                .map((entry) => { return { category: entry[0], count: entry[1] }; })
+                .sort((left, right) : number => { return right.count - left.count || left.category.localeCompare(right.category); }),
             timeline: this.timelineEvents.map((value) => { return { ...value }; })
         };
     }

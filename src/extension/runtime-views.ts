@@ -60,7 +60,7 @@ interface ProfilerStatusResponse
     /** Recent packet summaries for lightweight inspection. */
     recentPackets : { timestamp : string; size : number; kind : string; hexPreview : string }[];
     /** Structured timeline events decoded from captured packets. */
-    timelineEvents : { timestamp : string; size : number; kind : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
+    timelineEvents : { timestamp : string; size : number; kind : string; category : string; label : string; valueUnit? : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
 }
 
 /** Export payload opened by the profiler JSON command. */
@@ -70,8 +70,10 @@ interface ProfilerExportResponse
     summary : ProfilerStatusResponse;
     /** Frequency table grouped by timeline event kind. */
     eventKinds : { kind : string; count : number }[];
+    /** Frequency table grouped by semantic timeline category. */
+    eventCategories : { category : string; count : number }[];
     /** Full structured event list for the current capture buffer. */
-    timeline : { timestamp : string; size : number; kind : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
+    timeline : { timestamp : string; size : number; kind : string; category : string; label : string; valueUnit? : string; hexPreview : string; decodedValue? : boolean | number | string | number[] }[];
 }
 
 /** Mutable runtime snapshot mirrored into the tree views. */
@@ -415,6 +417,7 @@ export function registerRuntimeViews(context : vscode.ExtensionContext) : void
             new RuntimeTreeItem("Bytes received", String(status.receivedBytes)),
             new RuntimeTreeItem("Timeline events", String(status.timelineEvents.length)),
             new RuntimeTreeItem("Last event kind", status.timelineEvents.length > 0 ? status.timelineEvents[status.timelineEvents.length - 1].kind : "none"),
+            new RuntimeTreeItem("Last event category", status.timelineEvents.length > 0 ? status.timelineEvents[status.timelineEvents.length - 1].category : "none"),
             new RuntimeTreeItem("Last packet", status.lastPacketTimestamp ?? "none"),
             new RuntimeTreeItem("Export snapshot", "open JSON",
                 { command: "qml-debug.exportProfilerSnapshot", title: "Export Profiler Snapshot" })

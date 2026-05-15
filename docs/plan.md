@@ -84,9 +84,15 @@
 
 ## Phase 14: Real-Qt Semantic Validation and Remaining Parity Gaps
 
-- [ ] Expand the Qt-backed integration harness from smoke checks to semantic assertions over inspector selection results, decoded object-tree contents, profiler export payloads, and runtime teardown/re-attach behavior.
-- [ ] Close the remaining high-value DAP parity gaps that still block Qt Creator-like workflows or AI-assisted edits, including mutable variable/expression flows, exception info, loaded-source reporting, and any other surfaced capabilities that are still advertised as unimplemented.
-- [ ] Replace the current transport-level profiler event classifier with a semantic Qt Creator timeline decoder once enough real fixture captures are available to validate the mapping.
+- [x] Expand the Qt-backed integration harness from smoke checks to semantic assertions over inspector selection results, decoded object-tree contents, profiler export payloads, and runtime teardown/re-attach behavior.
+- [x] Close the remaining high-value DAP parity gaps that still block Qt Creator-like workflows or AI-assisted edits, including mutable variable/expression flows, exception info, loaded-source reporting, and any other surfaced capabilities that are still advertised as unimplemented.
+- [x] Replace the current transport-level profiler event classifier with a semantic Qt Creator timeline decoder once enough real fixture captures are available to validate the mapping.
+
+## Phase 15: Toolchain and Real-Qt CI Modernization
+
+- [ ] Move the repository toolchain to a current Node.js LTS baseline that matches the modern VS Code extension host, then regenerate dependency state with a supported npm version.
+- [ ] Replace deprecated packaging/build dependencies such as `vsce` with their maintained equivalents and refresh TypeScript, esbuild, ESLint, debugadapter, and test-electron packages under the new Node baseline.
+- [ ] Add a dedicated real-Qt CI path with an explicit Qt version, headless platform setup, fixture build cache, and diagnostics for runtimes that close the debug transport before inspector source lookup.
 
 ## Follow-Up
 

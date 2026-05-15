@@ -163,7 +163,7 @@ Available commands:
 - `QML Debug: Clear QML Profiler Snapshot`
 - `QML Debug: Export QML Profiler Snapshot`
 
-The profiler export now classifies captured packets into transport-level event kinds such as booleans, integers, strings, arrays, and opaque binary payloads. This makes scene graph and binding traffic easier to inspect in VS Code even though it is still not a full Qt Creator semantic decoder.
+The profiler export now classifies captured packets into transport-level event kinds such as booleans, integers, strings, arrays, and opaque binary payloads, then adds a semantic timeline layer with categories such as `scene-graph`, `binding`, `animation`, `javascript`, `memory`, `control`, and `unknown`. This keeps the export capture-driven while shaping it for Qt Creator-style timeline analysis instead of raw packet inspection only.
 
 ## Automation Control Plane
 
@@ -179,7 +179,7 @@ Supported action groups:
 
 - Session lifecycle: `debug.launch`, `debug.attach`, `debug.stop`, `sessions`.
 - Breakpoints: `breakpoints.setSource`.
-- DAP runtime requests: `dap.stackTrace`, `dap.scopes`, `dap.variables`, `dap.evaluate`, `dap.pause`, `dap.continue`, `dap.next`, `dap.stepIn`, `dap.stepOut`.
+- DAP runtime requests: `dap.loadedSources`, `dap.exceptionInfo`, `dap.stackTrace`, `dap.scopes`, `dap.variables`, `dap.evaluate`, `dap.setExpression`, `dap.setVariable`, `dap.pause`, `dap.continue`, `dap.next`, `dap.stepIn`, `dap.stepOut`.
 - Qt runtime state: `runtime.capabilities`, `inspector.status`, `inspector.setEnabled`, `inspector.setShowAppOnTop`, `inspector.selectObjects`, `inspector.selectBySource`, `inspector.objectTree`.
 - Profiler control: `profiler.status`, `profiler.start`, `profiler.stop`, `profiler.clear`, `profiler.export`.
 

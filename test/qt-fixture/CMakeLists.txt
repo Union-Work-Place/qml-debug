@@ -15,6 +15,8 @@ add_executable(qml-debug-fixture
     qml.qrc
 )
 
+target_compile_definitions(qml-debug-fixture PRIVATE QT_QML_DEBUG)
+
 target_link_libraries(qml-debug-fixture PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Gui
