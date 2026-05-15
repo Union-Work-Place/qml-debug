@@ -29,7 +29,7 @@
         "Debugger"
     ],
     "engines": {
-        "node": ">=22.12.0 <23",
+        "node": ">=22.13.0 <23",
         "vscode": "^1.120.0"
     },
     "packageManager": "npm@10.9.2",
@@ -510,9 +510,9 @@
         "dist-clean": "rm -rfv ./node_modules ./out ./out-test ./dist"
     },
     "devDependencies": {
-        "@eslint/js": "^10.4.0",
+        "@eslint/js": "^10.0.1",
         "@types/mocha": "^10.0.10",
-        "@types/node": "22.x",
+        "@types/node": "20.x",
         "@types/vscode": "^1.120.0",
         "@typescript-eslint/eslint-plugin": "^8.59.3",
         "@typescript-eslint/parser": "^8.59.3",
@@ -524,7 +524,7 @@
         "globals": "^16.5.0",
         "mocha": "^11.7.5",
         "nyc": "^18.0.0",
-        "typescript": "^6.0.3"
+        "typescript": "^5.9.3"
     },
     "dependencies": {
         "@vscode/debugadapter": "^1.68.0",

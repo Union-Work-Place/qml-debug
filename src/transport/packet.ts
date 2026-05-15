@@ -4,7 +4,7 @@ export default class Packet
     /** Number of bytes currently used in the packet buffer. */
     private size  = 0;
     /** Backing storage for packet bytes. May be larger than `size`. */
-    private data = Buffer.alloc(0);
+    private data : Buffer<ArrayBufferLike> = Buffer.alloc(0);
     /** Current sequential read cursor. */
     private readOffset  = 0;
 
