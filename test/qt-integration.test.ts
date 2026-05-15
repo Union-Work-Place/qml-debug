@@ -71,6 +71,43 @@ function resolveQtFixtureConfiguration() : QtFixtureConfiguration | undefined
     };
 }
 
+/** Format real-Qt fixture diagnostics for CI failures and local pending skips. */
+function describeQtFixtureDiagnostics(fixture : QtFixtureConfiguration, response : DebugProtocol.Response) : string
+{
+    return JSON.stringify(
+        {
+            fixture: {
+                origin: fixture.origin,
+                program: fixture.program,
+                programExists: fs.existsSync(fixture.program),
+                cwd: fixture.cwd,
+                qmlPath: fixture.qmlPath,
+                qmlPathExists: fs.existsSync(fixture.qmlPath)
+            },
+            environment: {
+                QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM,
+                QML_DEBUG_QT_FIXTURE_HOST: process.env.QML_DEBUG_QT_FIXTURE_HOST,
+                QML_DEBUG_QT_FIXTURE_PORT: process.env.QML_DEBUG_QT_FIXTURE_PORT,
+                QML_DEBUG_QT_FIXTURE_STRICT: process.env.QML_DEBUG_QT_FIXTURE_STRICT
+            },
+            response: {
+                command: response.command,
+                success: response.success,
+                message: response.message,
+                body: response.body
+            }
+        },
+        undefined,
+        2
+    );
+}
+
+/** Return whether known local real-Qt transport closure should become a hard failure. */
+function isStrictQtFixtureRun() : boolean
+{
+    return process.env.QML_DEBUG_QT_FIXTURE_STRICT === "1";
+}
+
 /** Wait briefly so the real fixture can emit timer, animation, and profiler traffic. */
 async function waitForFixtureActivity(timeoutMs : number) : Promise<void>
 {
@@ -232,7 +269,14 @@ describe("Qt-backed integration harness", function() : void
             {
                 const selectBySource = await selectKnownFixtureObject(session, fixture);
                 if (!selectBySource.success && (selectBySource.message ?? "").includes("write after end"))
+                {
+                    const diagnostics = describeQtFixtureDiagnostics(fixture, selectBySource);
+                    console.warn("Qt fixture debug transport closed before inspector source lookup:\n" + diagnostics);
+                    if (isStrictQtFixtureRun())
+                        assert.fail("Qt fixture debug transport closed before inspector source lookup. Diagnostics: " + diagnostics);
+
                     this.skip();
+                }
 
                 assert.strictEqual(selectBySource.success, true, selectBySource.message ?? JSON.stringify(selectBySource.body));
                 assert.strictEqual(Array.isArray(selectBySource.body.matchedObjectIds), true);

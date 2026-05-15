@@ -90,10 +90,11 @@
 
 ## Phase 15: Toolchain and Real-Qt CI Modernization
 
-- [ ] Move the repository toolchain to a current Node.js LTS baseline that matches the modern VS Code extension host, then regenerate dependency state with a supported npm version.
-- [ ] Replace deprecated packaging/build dependencies such as `vsce` with their maintained equivalents and refresh TypeScript, esbuild, ESLint, debugadapter, and test-electron packages under the new Node baseline.
-- [ ] Add a dedicated real-Qt CI path with an explicit Qt version, headless platform setup, fixture build cache, and diagnostics for runtimes that close the debug transport before inspector source lookup.
+- [x] Move the repository toolchain to a Node.js `22.12.0` and npm `10.9.2` baseline that matches the modern VS Code extension host.
+- [x] Replace deprecated packaging/build dependencies such as `vsce` with their maintained equivalents and refresh TypeScript, esbuild, ESLint, debugadapter, and test-electron packages under the new Node baseline.
+- [x] Add a dedicated real-Qt CI path with an explicit Qt version, headless platform setup, fixture build cache, and diagnostics for runtimes that close the debug transport before inspector source lookup.
 
 ## Follow-Up
 
 - Broaden the machine-facing debug surface beyond inspector/profiler control once the initial MCP/API layer is in place, for example around source editing helpers, fixture orchestration, and richer runtime state queries.
+- Regenerate and commit `package-lock.json` under Node.js `22.12.0` with npm `10.9.2`; the current local VM still exposes Node.js `10.24.0` and npm `5.8.0`, which cannot reliably run the supported npm dependency resolver.

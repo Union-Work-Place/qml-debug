@@ -28,6 +28,8 @@ The default executable location expected by the harness is one of:
 
 You can still point the harness at another build by setting `QML_DEBUG_QT_FIXTURE_PROGRAM`, `QML_DEBUG_QT_FIXTURE_CWD`, and `QML_DEBUG_QT_FIXTURE_QML_PATH`.
 
+The GitHub Actions real-Qt job builds this fixture with Qt `6.8.3`, runs it headlessly with `QT_QPA_PLATFORM=offscreen`, and sets `QML_DEBUG_QT_FIXTURE_STRICT=1` so debug transport closures during inspector source lookup are reported as CI failures with fixture diagnostics.
+
 ## Covered Debug Cases
 
 The fixture is small on purpose, but each file is there to exercise a real debugger surface:

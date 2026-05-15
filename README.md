@@ -16,6 +16,22 @@
 
 https://microsoft.github.io/debug-adapter-protocol/
 
+## Development Toolchain
+
+Development targets Node.js `22.12.0` with npm `10.9.2`, matching the modern VS Code extension host baseline used by this repository. Use `.nvmrc` or `.node-version` to select the runtime, then install dependencies with npm:
+
+```sh
+npm install
+```
+
+The repository uses npm package metadata and should keep `package-lock.json` committed after dependency refreshes. Packaging uses the maintained `@vscode/vsce` package while keeping the familiar `vsce` command name exposed by that package.
+
+Core validation is:
+
+```sh
+npm run ci
+```
+
 ## Usage
 Both attach and launch workflows are supported.
 
@@ -248,6 +264,8 @@ An optional integration harness now exists in the test suite for real Qt fixture
 - `QML_DEBUG_QT_FIXTURE_QML_PATH`
 
 Run it with `npm run test:qt-integration` after building `test/qt-fixture` locally, or after pointing those variables at another real Qt/QML fixture build.
+
+The CI workflow runs the same harness against Qt `6.8.3` on Linux with `QT_QPA_PLATFORM=offscreen` and `QML_DEBUG_QT_FIXTURE_STRICT=1`. In strict mode, runtimes that close the debug transport before inspector source lookup fail the job and print fixture, environment, and response diagnostics instead of silently becoming a pending local test.
 
 ## Qt Service Matrix
 

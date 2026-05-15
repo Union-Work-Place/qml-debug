@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 22.12.0
+
+jobs:
+  build-test:
+    name: Build and unit tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Typecheck, unit test, and build
+        run: npm run ci
+
+  real-qt-integration:
+    name: Real Qt integration
+    runs-on: ubuntu-24.04
+    needs: build-test
+    env:
+      QT_VERSION: 6.8.3
+      QT_QPA_PLATFORM: offscreen
+      QML_DEBUG_QT_FIXTURE_STRICT: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            ninja-build \
+            xvfb \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: qtdeclarative
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Qt diagnostics
+        run: |
+          node -v
+          npm -v
+          cmake --version
+          qmake6 -query || qmake -query || true
+          qtpaths6 --qt-version || qtpaths --qt-version || true
+          printenv | sort | grep -E '^(Qt6_DIR|QT_|QML_DEBUG_|PATH=)' || true
+
+      - name: Restore Qt fixture build cache
+        uses: actions/cache@v4
+        with:
+          path: test/qt-fixture/build
+          key: ${{ runner.os }}-qt-fixture-${{ env.QT_VERSION }}-${{ hashFiles('test/qt-fixture/**') }}
+          restore-keys: |
+            ${{ runner.os }}-qt-fixture-${{ env.QT_VERSION }}-
+
+      - name: Build Qt fixture
+        run: npm run fixture:configure -- -G Ninja && npm run fixture:build
+
+      - name: Run real Qt integration harness
+        run: npm run test:qt-integration
+
+      - name: Upload Qt fixture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-fixture-diagnostics
+          if-no-files-found: ignore
+          path: |
+            test/qt-fixture/build/CMakeCache.txt
+            test/qt-fixture/build/CMakeFiles/CMakeOutput.log
+            test/qt-fixture/build/CMakeFiles/CMakeError.log
