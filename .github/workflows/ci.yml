@@ -80,7 +80,6 @@ jobs:
           host: linux
           target: desktop
           arch: linux_gcc_64
-          modules: qtdeclarative
           cache: true
 
       - name: Install dependencies
